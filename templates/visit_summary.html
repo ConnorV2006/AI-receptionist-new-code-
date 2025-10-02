@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Visit Summary for {{ patient.name }}</h2>
+<p><strong>Date of Birth:</strong> {{ patient.dob }}</p>
+<hr>
+
+<h4>Visits</h4>
+<ul class="list-group">
+  {% for visit in patient.visits %}
+    <li class="list-group-item">
+      <strong>{{ visit.date.strftime('%Y-%m-%d %H:%M') }}</strong><br>
+      Notes: {{ visit.notes }}<br>
+      {% if visit.summary_pdf %}
+        <a href="/visits/download/{{ visit.id }}" class="btn btn-sm btn-success mt-1">Download PDF</a>
+      {% else %}
+        <a href="/visits/export/{{ visit.id }}" class="btn btn-sm btn-primary mt-1">Export to PDF</a>
+      {% endif %}
+    </li>
+  {% else %}
+    <li class="list-group-item">No visits yet.</li>
+  {% endfor %}
+</ul>
+{% endblock %}
