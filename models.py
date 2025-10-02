@@ -1,0 +1,70 @@
+from datetime import datetime
+from app import db
+
+class User(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    email = db.Column(db.String(120), unique=True, nullable=False)
+    password = db.Column(db.String(200), nullable=False)
+    role = db.Column(db.String(20), default="staff")  # staff, admin, superadmin
+
+class Clinic(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(120))
+    slug = db.Column(db.String(50), unique=True)
+    twilio_number = db.Column(db.String(20))
+    twilio_sid = db.Column(db.String(120))
+    twilio_token = db.Column(db.String(120))
+
+class Patient(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(120))
+    dob = db.Column(db.Date)
+    visits = db.relationship("Visit", backref="patient", lazy=True)
+
+class Visit(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    patient_id = db.Column(db.Integer, db.ForeignKey("patient.id"))
+    date = db.Column(db.DateTime, default=datetime.utcnow)
+    notes = db.Column(db.Text)
+    summary_pdf = db.Column(db.String(200))
+
+class Paystub(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    employee = db.Column(db.String(120))
+    period = db.Column(db.String(50))
+    gross = db.Column(db.Float)
+    net = db.Column(db.Float)
+
+class Appointment(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    patient_name = db.Column(db.String(120))
+    date = db.Column(db.Date)
+    time = db.Column(db.Time)
+
+class Reminder(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    phone = db.Column(db.String(20))
+    message = db.Column(db.Text)
+    send_time = db.Column(db.DateTime)
+
+class FileUpload(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    filename = db.Column(db.String(200))
+    path = db.Column(db.String(300))
+    uploaded_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+class CallLog(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    clinic_id = db.Column(db.Integer, db.ForeignKey("clinic.id"))
+    from_number = db.Column(db.String(20))
+    to_number = db.Column(db.String(20))
+    status = db.Column(db.String(50))
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+
+class MessageLog(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    clinic_id = db.Column(db.Integer, db.ForeignKey("clinic.id"))
+    from_number = db.Column(db.String(20))
+    to_number = db.Column(db.String(20))
+    body = db.Column(db.Text)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
