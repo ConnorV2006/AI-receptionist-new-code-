@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Audit Logs</h2>
+<table class="table table-striped">
+  <thead>
+    <tr>
+      <th>Type</th>
+      <th>From</th>
+      <th>To</th>
+      <th>Content/Status</th>
+      <th>Time</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for log in logs %}
+    <tr>
+      <td>{{ log.type }}</td>
+      <td>{{ log.from_number }}</td>
+      <td>{{ log.to_number }}</td>
+      <td>{{ log.body or log.status }}</td>
+      <td>{{ log.timestamp }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="5">No logs found.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
