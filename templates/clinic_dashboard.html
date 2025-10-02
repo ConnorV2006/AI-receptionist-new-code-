@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>{{ clinic.name }} Dashboard</h2>
+<p>Twilio Number: {{ clinic.twilio_number }}</p>
+
+<h4>Recent Calls</h4>
+<ul class="list-group mb-3">
+  {% for call in calls %}
+    <li class="list-group-item">{{ call.timestamp }} — {{ call.from_number }} → {{ call.to_number }} ({{ call.status }})</li>
+  {% else %}
+    <li class="list-group-item">No calls yet.</li>
+  {% endfor %}
+</ul>
+
+<h4>Recent Messages</h4>
+<ul class="list-group">
+  {% for msg in messages %}
+    <li class="list-group-item">{{ msg.timestamp }} — {{ msg.from_number }}: {{ msg.body }}</li>
+  {% else %}
+    <li class="list-group-item">No messages yet.</li>
+  {% endfor %}
+</ul>
+{% endblock %}
