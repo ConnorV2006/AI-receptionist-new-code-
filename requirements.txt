@@ -1,21 +1,21 @@
-flask==2.3.3
-flask_sqlalchemy==3.1.1
-flask_migrate==4.0.4
-cryptography==41.0.5
-twilio==9.0.4
-gunicorn==21.2.0
-openpyxl>=3.1
-reportlab==4.0.9
+flask
+flask_sqlalchemy
+flask_migrate
+gunicorn
 
-# Include a Postgres driver. Render uses PostgreSQL by default, so we need
-# psycopg2-binary to allow SQLAlchemy to communicate with the database. If
-# you prefer the non-binary distribution or are compiling from source, you
-# may use `psycopg2` instead. See README for details.
-psycopg2-binary>=2.9
+# Database driver
+psycopg2-binary
 
-# OpenAI client library for generating AI summaries of incoming messages.
-# This package is optional but recommended if you want automatic
-# summarisation of patient messages via the OpenAI API. If you don't
-# configure an OPENAI_API_KEY in your environment, the application will
-# gracefully fall back to returning the original message.
-openai>=0.28
+# Data handling
+pandas
+openpyxl   # Excel export support
+
+# PDF generation
+reportlab
+
+# Security
+cryptography
+python-dotenv
+
+# Twilio (SMS/Calls integration if you re-enable)
+twilio
