@@ -11,6 +11,8 @@ class User(db.Model):
     phone_number = db.Column(db.String(20))  # Added in migration 0002
     clinic_id = db.Column(db.Integer, db.ForeignKey("clinic.id"))  # Added in migration 0003
 
+    audit_logs = db.relationship("AuditLog", backref="user", lazy=True)
+
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
 
@@ -92,3 +94,11 @@ class MessageLog(db.Model):
     to_number = db.Column(db.String(20))
     body = db.Column(db.Text)
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class AuditLog(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"))
+    action = db.Column(db.String(200), nullable=False)
+    details = db.Column(db.Text)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
