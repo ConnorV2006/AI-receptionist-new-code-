@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Admin Dashboard</h2>
+<div class="row">
+  <div class="col-md-4">
+    <div class="card mb-3">
+      <div class="card-body text-center">
+        <h5>Clinics</h5>
+        <a href="/clinics" class="btn btn-primary">View Clinics</a>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card mb-3">
+      <div class="card-body text-center">
+        <h5>Reports</h5>
+        <a href="/reports" class="btn btn-info">View Reports</a>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card mb-3">
+      <div class="card-body text-center">
+        <h5>Audit Logs</h5>
+        <a href="/audit-logs" class="btn btn-warning">View Logs</a>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
