@@ -1,46 +1,42 @@
 import os
-from io import BytesIO
-import pandas as pd
-from datetime import datetime
-from flask import Flask, render_template, request, redirect, url_for, flash, send_file, session
+from flask import Flask, render_template, redirect, url_for, request, abort, Response
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
-from werkzeug.utils import secure_filename
-from functools import wraps
+from flask_login import LoginManager, login_user, logout_user, login_required, current_user
+from werkzeug.security import check_password_hash
+from datetime import datetime
+import csv
+from io import StringIO, BytesIO
+
+# PDF export
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.lib.pagesizes import A4
+from reportlab.lib import colors
+from reportlab.lib.styles import getSampleStyleSheet
 
 # -------------------------------------------------
 # App + Config
 # -------------------------------------------------
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get("SECRET_KEY", "dev_secret")
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get("DATABASE_URL", "sqlite:///app.db")
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get("DATABASE_URL")
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
 migrate = Migrate(app, db)
 
-# Import models
-from models import User, Clinic, Patient, Visit, Paystub, Appointment, Reminder, FileUpload, CallLog, MessageLog
-
-UPLOAD_FOLDER = "uploads"
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-
 # -------------------------------------------------
-# Role-based access decorator
+# Login Manager
 # -------------------------------------------------
-def role_required(role):
-    def wrapper(fn):
-        @wraps(fn)
-        def decorated_view(*args, **kwargs):
-            if "role" not in session:
-                flash("You must log in first.")
-                return redirect(url_for("login"))
-            if session["role"] != role and session["role"] != "superadmin":
-                flash("Access denied: insufficient permissions.")
-                return redirect(url_for("dashboard"))
-            return fn(*args, **kwargs)
-        return decorated_view
-    return wrapper
+login_manager = LoginManager(app)
+login_manager.login_view = "login"
+
+from models import User, AuditLog, Clinic, Patient, Visit, Paystub, Appointment, Reminder, FileUpload, CallLog, MessageLog, Role
+from utils import is_superadmin
+
+@login_manager.user_loader
+def load_user(user_id):
+    return User.query.get(int(user_id))
 
 # -------------------------------------------------
 # Auth Routes
@@ -48,233 +44,182 @@ def role_required(role):
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
-        email = request.form["email"]
-        password = request.form["password"]
+        email = request.form.get("email")
+        password = request.form.get("password")
         user = User.query.filter_by(email=email).first()
         if user and user.check_password(password):
-            session["user_id"] = user.id
-            session["role"] = user.role
+            login_user(user)
             return redirect(url_for("dashboard"))
         else:
-            flash("Invalid login")
+            return render_template("login.html", error="Invalid credentials")
     return render_template("login.html")
 
+
 @app.route("/logout")
+@login_required
 def logout():
-    session.clear()
+    logout_user()
     return redirect(url_for("login"))
-
-@app.route("/change-password", methods=["GET", "POST"])
-def change_password():
-    if "user_id" not in session:
-        flash("You must log in first.")
-        return redirect(url_for("login"))
-
-    user = User.query.get(session["user_id"])
-    if request.method == "POST":
-        old_pw = request.form["old_password"]
-        new_pw = request.form["new_password"]
-        confirm_pw = request.form["confirm_password"]
-
-        if not user.check_password(old_pw):
-            flash("Old password is incorrect.")
-            return redirect(url_for("change_password"))
-
-        if new_pw != confirm_pw:
-            flash("New passwords do not match.")
-            return redirect(url_for("change_password"))
-
-        user.set_password(new_pw)
-        db.session.commit()
-        flash("Password updated successfully.")
-        return redirect(url_for("dashboard"))
-
-    return render_template("change_password.html")
 
 # -------------------------------------------------
 # Dashboard
 # -------------------------------------------------
 @app.route("/")
-@app.route("/dashboard")
+@login_required
 def dashboard():
-    if "user_id" not in session:
-        return redirect(url_for("login"))
     return render_template("dashboard.html")
 
 # -------------------------------------------------
-# Users (superadmin only)
+# Audit Logs Routes
 # -------------------------------------------------
-@app.route("/users", methods=["GET", "POST"])
-@role_required("superadmin")
-def manage_users():
-    if request.method == "POST":
-        email = request.form["email"]
-        password = request.form["password"]
-        role = request.form["role"]
-        new_user = User(email=email, role=role)
-        new_user.set_password(password)
-        db.session.add(new_user)
-        db.session.commit()
-        flash("New user created successfully!")
-        return redirect(url_for("manage_users"))
-
-    users = User.query.all()
-    return render_template("users.html", users=users)
-
-@app.route("/users/promote/<int:user_id>/<string:new_role>")
-@role_required("superadmin")
-def promote_user(user_id, new_role):
-    user = User.query.get_or_404(user_id)
-    if user.role == "superadmin":
-        flash("You cannot change another superadmin.")
-        return redirect(url_for("manage_users"))
-    user.role = new_role
-    db.session.commit()
-    flash(f"{user.email} updated to {new_role}")
-    return redirect(url_for("manage_users"))
-
-@app.route("/users/delete/<int:user_id>")
-@role_required("superadmin")
-def delete_user(user_id):
-    user = User.query.get_or_404(user_id)
-    if user.role == "superadmin":
-        flash("You cannot delete a superadmin.")
-        return redirect(url_for("manage_users"))
-    db.session.delete(user)
-    db.session.commit()
-    flash("User deleted successfully")
-    return redirect(url_for("manage_users"))
-
-# -------------------------------------------------
-# Paystubs
-# -------------------------------------------------
-@app.route("/paystubs", methods=["GET", "POST"])
-def paystubs():
-    if request.method == "POST":
-        file = request.files["paystubFile"]
-        if file:
-            filename = secure_filename(file.filename)
-            filepath = os.path.join(UPLOAD_FOLDER, filename)
-            file.save(filepath)
-
-            if filename.endswith(".csv"):
-                df = pd.read_csv(filepath)
-            else:
-                df = pd.read_excel(filepath)
-
-            for _, row in df.iterrows():
-                stub = Paystub(employee=row["Employee"], period=row["Period"], gross=row["Gross"], net=row["Net"])
-                db.session.add(stub)
-            db.session.commit()
-            flash("Paystubs uploaded successfully")
-            return redirect(url_for("paystubs"))
-
-    stubs = Paystub.query.all()
-    return render_template("paystubs.html", paystubs=stubs)
-
-@app.route("/paystubs/export/<int:stub_id>")
-def export_paystub(stub_id):
-    stub = Paystub.query.get_or_404(stub_id)
-    df = pd.DataFrame([{
-        "Employee": stub.employee,
-        "Period": stub.period,
-        "Gross": stub.gross,
-        "Net": stub.net
-    }])
-    output = BytesIO()
-    df.to_excel(output, index=False)
-    output.seek(0)
-    return send_file(output, as_attachment=True, download_name=f"paystub_{stub.employee}.xlsx")
-
-# -------------------------------------------------
-# Appointments
-# -------------------------------------------------
-@app.route("/appointments", methods=["GET", "POST"])
-def appointments():
-    if request.method == "POST":
-        name = request.form["patient_name"]
-        date = request.form["date"]
-        time = request.form["time"]
-        appt = Appointment(patient_name=name, date=date, time=time)
-        db.session.add(appt)
-        db.session.commit()
-        return redirect(url_for("appointments"))
-
-    appts = Appointment.query.all()
-    events = [{"title": a.patient_name, "start": f"{a.date}T{a.time}"} for a in appts]
-    return render_template("appointments.html", appointments=events)
-
-# -------------------------------------------------
-# Reminders
-# -------------------------------------------------
-@app.route("/reminders", methods=["GET", "POST"])
-def reminders():
-    if request.method == "POST":
-        phone = request.form["phone"]
-        message = request.form["message"]
-        send_time = request.form["send_time"]
-        reminder = Reminder(phone=phone, message=message, send_time=send_time)
-        db.session.add(reminder)
-        db.session.commit()
-        flash("Reminder scheduled")
-        return redirect(url_for("reminders"))
-
-    all_reminders = Reminder.query.all()
-    return render_template("reminders.html", reminders=all_reminders)
-
-# -------------------------------------------------
-# Patient Visits
-# -------------------------------------------------
-@app.route("/patients/<int:patient_id>/visits")
-def patient_visits(patient_id):
-    patient = Patient.query.get_or_404(patient_id)
-    return render_template("visit_summary.html", patient=patient)
-
-@app.route("/visits/export/<int:visit_id>")
-def export_visit(visit_id):
-    visit = Visit.query.get_or_404(visit_id)
-    from reportlab.platypus import SimpleDocTemplate, Paragraph
-    from reportlab.lib.styles import getSampleStyleSheet
-    output = BytesIO()
-    doc = SimpleDocTemplate(output)
-    styles = getSampleStyleSheet()
-    story = [
-        Paragraph(f"Visit Summary for Patient {visit.patient_id}", styles["Heading1"]),
-        Paragraph(f"Date: {visit.date}", styles["Normal"]),
-        Paragraph(f"Notes: {visit.notes}", styles["Normal"]),
-    ]
-    doc.build(story)
-    output.seek(0)
-    return send_file(output, as_attachment=True, download_name=f"visit_{visit.id}.pdf")
-
-# -------------------------------------------------
-# Logs & Quick Replies
-# -------------------------------------------------
-@app.route("/audit-logs")
-@role_required("admin")
-def audit_logs():
-    calls = CallLog.query.all()
-    msgs = MessageLog.query.all()
-    logs = []
-    for c in calls:
-        logs.append({"type": "Call", "from_number": c.from_number, "to_number": c.to_number, "status": c.status, "timestamp": c.timestamp})
-    for m in msgs:
-        logs.append({"type": "Message", "from_number": m.from_number, "to_number": m.to_number, "body": m.body, "timestamp": m.timestamp})
+@app.route("/superadmin/audit-logs")
+@login_required
+def view_audit_logs():
+    if not is_superadmin():
+        abort(403)
+    logs = filter_audit_logs()
     return render_template("audit_logs.html", logs=logs)
 
-@app.route("/quick-replies", methods=["GET", "POST"])
-def quick_replies():
-    if "quick_replies" not in session:
-        session["quick_replies"] = []
-    if request.method == "POST":
-        session["quick_replies"].append(request.form["reply"])
-    return render_template("quick_replies.html", replies=session["quick_replies"])
 
-@app.route("/quick-replies/delete/<int:idx>")
-def delete_quick_reply(idx):
-    if "quick_replies" in session and idx < len(session["quick_replies"]):
-        session["quick_replies"].pop(idx)
-    return redirect(url_for("quick_replies"))
+@app.route("/superadmin/audit-logs/export")
+@login_required
+def export_audit_logs():
+    if not is_superadmin():
+        abort(403)
+
+    logs = filter_audit_logs()
+
+    si = StringIO()
+    writer = csv.writer(si)
+    writer.writerow(["ID", "User", "Action", "Details", "Timestamp"])
+    for log in logs:
+        writer.writerow([
+            log.id,
+            log.user.email if log.user else "Unauthenticated",
+            log.action,
+            log.details or "-",
+            log.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+        ])
+    output = si.getvalue().encode("utf-8")
+    si.close()
+
+    return Response(
+        output,
+        mimetype="text/csv",
+        headers={"Content-Disposition": "attachment; filename=audit_logs.csv"},
+    )
+
+
+@app.route("/superadmin/audit-logs/export/pdf")
+@login_required
+def export_audit_logs_pdf():
+    if not is_superadmin():
+        abort(403)
+
+    logs = filter_audit_logs()
+
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4)
+    styles = getSampleStyleSheet()
+    elements = []
+
+    elements.append(Paragraph("Audit Logs Report", styles["Title"]))
+    elements.append(Spacer(1, 12))
+
+    data = [["ID", "User", "Action", "Details", "Timestamp"]]
+    for log in logs:
+        data.append([
+            str(log.id),
+            log.user.email if log.user else "Unauthenticated",
+            log.action,
+            log.details or "-",
+            log.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+        ])
+
+    table = Table(data, repeatRows=1)
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#333333")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+        ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("BOTTOMPADDING", (0, 0), (-1, 0), 12),
+        ("BACKGROUND", (0, 1), (-1, -1), colors.beige),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+    ]))
+    elements.append(table)
+
+    doc.build(elements)
+    buffer.seek(0)
+
+    return Response(
+        buffer.getvalue(),
+        mimetype="application/pdf",
+        headers={"Content-Disposition": "attachment; filename=audit_logs.pdf"},
+    )
+
+
+@app.route("/superadmin/audit-logs/export/all")
+@login_required
+def export_all_audit_logs():
+    if not is_superadmin():
+        abort(403)
+
+    logs = AuditLog.query.order_by(AuditLog.timestamp.desc()).all()
+
+    si = StringIO()
+    writer = csv.writer(si)
+    writer.writerow(["ID", "User", "Action", "Details", "Timestamp"])
+    for log in logs:
+        writer.writerow([
+            log.id,
+            log.user.email if log.user else "Unauthenticated",
+            log.action,
+            log.details or "-",
+            log.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+        ])
+    output = si.getvalue().encode("utf-8")
+    si.close()
+
+    return Response(
+        output,
+        mimetype="text/csv",
+        headers={"Content-Disposition": "attachment; filename=audit_logs_full.csv"},
+    )
+
+
+# -------------------------------------------------
+# Shared Filtering Logic
+# -------------------------------------------------
+def filter_audit_logs():
+    query = AuditLog.query
+
+    user_email = request.args.get("user")
+    if user_email:
+        query = query.join(User).filter(User.email.ilike(f"%{user_email}%"))
+
+    action = request.args.get("action")
+    if action:
+        query = query.filter(AuditLog.action.ilike(f"%{action}%"))
+
+    start = request.args.get("start")
+    end = request.args.get("end")
+
+    if start:
+        try:
+            start_date = datetime.strptime(start, "%Y-%m-%d")
+            query = query.filter(AuditLog.timestamp >= start_date)
+        except ValueError:
+            pass
+
+    if end:
+        try:
+            end_date = datetime.strptime(end, "%Y-%m-%d")
+            query = query.filter(AuditLog.timestamp <= end_date)
+        except ValueError:
+            pass
+
+    return query.order_by(AuditLog.timestamp.desc()).all()
+
 
 # -------------------------------------------------
 # Run
