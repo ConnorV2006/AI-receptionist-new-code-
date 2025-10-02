@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Quick Replies</h2>
+<form method="POST">
+  <div class="mb-3">
+    <label>New Quick Reply</label>
+    <input type="text" class="form-control" name="reply" required>
+  </div>
+  <button class="btn btn-primary">Add Reply</button>
+</form>
+
+<hr>
+<ul class="list-group">
+  {% for reply in replies %}
+    <li class="list-group-item d-flex justify-content-between">
+      {{ reply }}
+      <a href="/quick-replies/delete/{{ loop.index0 }}" class="btn btn-sm btn-danger">Delete</a>
+    </li>
+  {% else %}
+    <li class="list-group-item">No quick replies yet.</li>
+  {% endfor %}
+</ul>
+{% endblock %}
