@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Reminders</h2>
+
+<form method="POST">
+  <div class="mb-3"><input type="text" class="form-control" name="phone" placeholder="Phone Number" required></div>
+  <div class="mb-3"><textarea class="form-control" name="message" placeholder="Reminder Message" required></textarea></div>
+  <div class="mb-3"><input type="datetime-local" class="form-control" name="send_time" required></div>
+  <button class="btn btn-primary">Schedule</button>
+</form>
+
+<hr>
+<ul class="list-group">
+  {% for reminder in reminders %}
+    <li class="list-group-item">{{ reminder.phone }} → {{ reminder.message }} at {{ reminder.send_time }}</li>
+  {% else %}
+    <li class="list-group-item">No reminders scheduled.</li>
+  {% endfor %}
+</ul>
+{% endblock %}
