@@ -89,3 +89,21 @@ class AuditLog(db.Model):
     action = db.Column(db.String(255), nullable=False)
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
     details = db.Column(db.Text)
+# ---------- Doctor Notes ----------
+class DoctorNote(db.Model):
+    __tablename__ = "doctor_notes"
+    id = db.Column(db.Integer, primary_key=True)
+    doctor_id = db.Column(db.Integer, db.ForeignKey("doctors.id"), nullable=False)
+    patient_id = db.Column(db.Integer, db.ForeignKey("patients.id"), nullable=False)
+    appointment_id = db.Column(db.Integer, db.ForeignKey("appointments.id"), nullable=True)
+    content = db.Column(db.Text, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+# ---------- Nurse Profiles / Notes ----------
+class NurseProfile(db.Model):
+    __tablename__ = "nurse_profiles"
+    id = db.Column(db.Integer, primary_key=True)
+    nurse_id = db.Column(db.Integer, db.ForeignKey("nurses.id"), nullable=False)
+    bio = db.Column(db.Text)
+    notes = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
