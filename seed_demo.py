@@ -1,126 +1,106 @@
+import os
 from datetime import datetime, timedelta
-from models import db, Role, User, Patient, Appointment, DoctorNote, NurseProfile, AuditLog, TwilioLog
+from app import db, app
+from models import (
+    Role, User, Patient, Appointment, DoctorNote,
+    NurseProfile, ReceptionistProfile, AuditLog, TwilioLog
+)
 
-def run_demo_seed():
-    """Seed demo data for showcasing the system to businesses."""
+def run_seed():
+    with app.app_context():
+        db.drop_all()
+        db.create_all()
 
-    # --- Roles ---
-    roles = ["Admin", "Doctor", "Nurse", "Receptionist"]
-    for r in roles:
-        if not Role.query.filter_by(name=r).first():
-            db.session.add(Role(name=r))
-
-    db.session.commit()
-
-    # --- Users ---
-    admin = User.query.filter_by(username="admin").first()
-    if not admin:
-        admin = User(username="admin", email="admin@example.com", role=Role.query.filter_by(name="Admin").first())
-        admin.set_password("StrongP@ssw0rd!")
-        db.session.add(admin)
-
-    doctor = User.query.filter_by(username="dr_smith").first()
-    if not doctor:
-        doctor = User(username="dr_smith", email="drsmith@example.com", role=Role.query.filter_by(name="Doctor").first())
-        doctor.set_password("doctorpass")
-        db.session.add(doctor)
-
-    nurse = User.query.filter_by(username="nurse_jane").first()
-    if not nurse:
-        nurse = User(username="nurse_jane", email="nursejane@example.com", role=Role.query.filter_by(name="Nurse").first())
-        nurse.set_password("nursepass")
-        db.session.add(nurse)
-
-    receptionist = User.query.filter_by(username="receptionist_kate").first()
-    if not receptionist:
-        receptionist = User(username="receptionist_kate", email="kate@example.com", role=Role.query.filter_by(name="Receptionist").first())
-        receptionist.set_password("receptionpass")
-        db.session.add(receptionist)
-
-    db.session.commit()
-
-    # --- Nurse Profile ---
-    if not NurseProfile.query.filter_by(nurse_id=nurse.id).first():
-        nurse_profile = NurseProfile(nurse_id=nurse.id, department="General Care")
-        db.session.add(nurse_profile)
+        # ----------------------------------------
+        # Roles
+        # ----------------------------------------
+        roles = {}
+        for role_name in ["Admin", "Doctor", "Nurse", "Receptionist", "Patient"]:
+            role = Role(name=role_name)
+            db.session.add(role)
+            roles[role_name] = role
         db.session.commit()
 
-    # --- Patients ---
-    patient1 = Patient.query.filter_by(email="john.doe@example.com").first()
-    if not patient1:
-        patient1 = Patient(first_name="John", last_name="Doe", email="john.doe@example.com", phone="+1234567890")
-        db.session.add(patient1)
+        # ----------------------------------------
+        # Users
+        # ----------------------------------------
+        admin = User(username="admin", email="admin@example.com", role=roles["Admin"])
+        doctor = User(username="dr_smith", email="dr.smith@example.com", role=roles["Doctor"])
+        nurse = User(username="nurse_jane", email="nurse.jane@example.com", role=roles["Nurse"])
+        receptionist = User(username="reception_bob", email="bob@example.com", role=roles["Receptionist"])
 
-    patient2 = Patient.query.filter_by(email="jane.smith@example.com").first()
-    if not patient2:
-        patient2 = Patient(first_name="Jane", last_name="Smith", email="jane.smith@example.com", phone="+1987654321")
-        db.session.add(patient2)
-
-    db.session.commit()
-
-    # --- Appointments (Past, Present, Future) ---
-    appts = [
-        Appointment(patient_id=patient1.id, doctor_id=doctor.id, scheduled_time=datetime.utcnow() - timedelta(days=2)),
-        Appointment(patient_id=patient2.id, doctor_id=doctor.id, scheduled_time=datetime.utcnow()),  # today
-        Appointment(patient_id=patient1.id, doctor_id=doctor.id, scheduled_time=datetime.utcnow() + timedelta(days=3)),
-    ]
-    for a in appts:
-        if not Appointment.query.filter_by(patient_id=a.patient_id, doctor_id=a.doctor_id, scheduled_time=a.scheduled_time).first():
-            db.session.add(a)
-
-    db.session.commit()
-
-    # --- Doctor Notes ---
-    note = DoctorNote.query.first()
-    if not note:
-        db.session.add(DoctorNote(doctor_id=doctor.id, patient_id=patient1.id, content="Patient recovering well. Prescribed rest."))
-        db.session.add(DoctorNote(doctor_id=doctor.id, patient_id=patient2.id, content="Patient experiencing mild symptoms. Follow-up in 1 week."))
+        db.session.add_all([admin, doctor, nurse, receptionist])
         db.session.commit()
 
-    # --- Audit Logs ---
-    logs = [
-        AuditLog(user_id=admin.id, action="Created demo system", details="Initial demo setup"),
-        AuditLog(user_id=doctor.id, action="Checked patient record", details="Accessed John Doe record"),
-        AuditLog(user_id=receptionist.id, action="Scheduled appointment", details="Appointment for Jane Smith"),
-    ]
-    for log in logs:
-        db.session.add(log)
+        # ----------------------------------------
+        # Nurse & Receptionist Profiles
+        # ----------------------------------------
+        nurse_profile = NurseProfile(nurse_id=nurse.id, department="Cardiology")
+        receptionist_profile = ReceptionistProfile(receptionist_id=receptionist.id, front_desk="Main Desk")
+        db.session.add_all([nurse_profile, receptionist_profile])
 
-    db.session.commit()
+        # ----------------------------------------
+        # Patients
+        # ----------------------------------------
+        patients = [
+            Patient(first_name="Alice", last_name="Brown", email="alice@example.com", phone="+123456789"),
+            Patient(first_name="Bob", last_name="Jones", email="bob@example.com", phone="+198765432"),
+            Patient(first_name="Carol", last_name="Taylor", email="carol@example.com", phone="+112233445"),
+        ]
+        db.session.add_all(patients)
+        db.session.commit()
 
-    # --- Twilio Logs (SMS, Call, Fax) ---
-    sms = TwilioLog.query.filter_by(type="sms").first()
-    if not sms:
-        db.session.add(TwilioLog(
-            type="sms",
-            from_number="+12312448612",
-            to_number=patient1.phone,
-            content="Reminder: Your appointment is tomorrow at 10 AM.",
-            status="delivered",
-            timestamp=datetime.utcnow() - timedelta(hours=1)
-        ))
+        # ----------------------------------------
+        # Appointments (past, present, future)
+        # ----------------------------------------
+        now = datetime.utcnow()
+        appointments = [
+            Appointment(patient_id=patients[0].id, doctor_id=doctor.id, scheduled_time=now - timedelta(days=2)),
+            Appointment(patient_id=patients[1].id, doctor_id=doctor.id, scheduled_time=now),
+            Appointment(patient_id=patients[2].id, doctor_id=doctor.id, scheduled_time=now + timedelta(days=3)),
+        ]
+        db.session.add_all(appointments)
+        db.session.commit()
 
-    call = TwilioLog.query.filter_by(type="call").first()
-    if not call:
-        db.session.add(TwilioLog(
-            type="call",
-            from_number="+12312448612",
-            to_number=patient2.phone,
-            content="Call placed to confirm appointment.",
-            status="completed",
-            timestamp=datetime.utcnow()
-        ))
+        # ----------------------------------------
+        # Doctor Notes
+        # ----------------------------------------
+        notes = [
+            DoctorNote(doctor_id=doctor.id, patient_id=patients[0].id, content="Routine checkup - all good."),
+            DoctorNote(doctor_id=doctor.id, patient_id=patients[1].id, content="Follow-up needed."),
+        ]
+        db.session.add_all(notes)
 
-    fax = TwilioLog.query.filter_by(type="fax").first()
-    if not fax:
-        db.session.add(TwilioLog(
-            type="fax",
-            from_number="+12312448612",
-            to_number="+11234567890",
-            content="Fax sent with lab results.",
-            status="sent",
-            timestamp=datetime.utcnow() - timedelta(days=1)
-        ))
+        # ----------------------------------------
+        # Audit Logs
+        # ----------------------------------------
+        logs = [
+            AuditLog(user_id=admin.id, action="Created system", details="Initial system setup"),
+            AuditLog(user_id=doctor.id, action="Added note", details="Added patient note"),
+            AuditLog(user_id=receptionist.id, action="Scheduled appointment", details="Bob Jones, tomorrow"),
+        ]
+        db.session.add_all(logs)
 
-    db.session.commit()
-    print("🌱 Demo data seeded successfully!")
+        # ----------------------------------------
+        # Twilio Logs (SMS, Calls, Faxes)
+        # ----------------------------------------
+        twilio_logs = [
+            # SMS
+            TwilioLog(type="sms", from_number="+15550001", to_number="+123456789", content="Reminder: Appointment today", status="sent", timestamp=now),
+            TwilioLog(type="sms", from_number="+123456789", to_number="+15550001", content="Thanks!", status="received", timestamp=now - timedelta(days=1)),
+
+            # Call
+            TwilioLog(type="call", from_number="+15550002", to_number="+198765432", content="Voicemail: Follow up needed", status="completed", timestamp=now - timedelta(days=2)),
+            TwilioLog(type="call", from_number="+15550002", to_number="+198765432", content="Live call: patient spoke with nurse", status="answered", timestamp=now),
+
+            # Fax
+            TwilioLog(type="fax", from_number="+15550003", to_number="+112233445", content="Lab results", status="delivered", timestamp=now - timedelta(days=3)),
+            TwilioLog(type="fax", from_number="+112233445", to_number="+15550003", content="Insurance paperwork", status="pending", timestamp=now + timedelta(days=1)),
+        ]
+        db.session.add_all(twilio_logs)
+
+        db.session.commit()
+        print("✅ Demo data seeded successfully!")
+
+if __name__ == "__main__":
+    run_seed()
