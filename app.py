@@ -115,6 +115,18 @@ def seed_command():
     from seed import run_seed
     run_seed()
     print("✅ Database seeded.")
+from flask.cli import with_appcontext
+import click
+from seed_demo import run_demo_seed  # this should be in seed_demo.py (separate file)
+
+@click.command("seed_demo")
+@with_appcontext
+def seed_demo_command():
+    """Seed demo data for showcasing the system."""
+    run_demo_seed()
+    click.echo("🌱 Demo data seeded successfully!")
+
+app.cli.add_command(seed_demo_command)
 
 
 # -------------------------------------------------
