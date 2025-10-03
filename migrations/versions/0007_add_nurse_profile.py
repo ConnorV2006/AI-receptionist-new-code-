@@ -3,9 +3,8 @@
 from alembic import op
 import sqlalchemy as sa
 
-# Revision identifiers
 revision = "0007_add_nurse_profile"
-down_revision = "0006_seed_demo_data"   # adjust if needed
+down_revision = "0006_seed_demo_data"
 branch_labels = None
 depends_on = None
 
