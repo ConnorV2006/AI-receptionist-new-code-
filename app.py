@@ -1,49 +1,54 @@
 import os
-from datetime import datetime, date
-
-from flask import Flask, render_template, request, redirect, url_for, flash, abort
+from functools import wraps
+from flask import Flask, render_template, request, redirect, url_for, flash, session
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
-from flask_login import LoginManager, login_user, logout_user, login_required, current_user
-from werkzeug.security import check_password_hash
+from cryptography.fernet import Fernet
+from dotenv import load_dotenv
+from werkzeug.security import generate_password_hash, check_password_hash
 
 # -------------------------------------------------
-# App Config
+# App + Config
 # -------------------------------------------------
+load_dotenv()
+
 app = Flask(__name__)
-
-app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev_secret")
-app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get("DATABASE_URL")
-app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+app.config['SECRET_KEY'] = os.environ.get("SECRET_KEY", "dev_secret")
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get("DATABASE_URL")
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
 migrate = Migrate(app, db)
 
-login_manager = LoginManager(app)
-login_manager.login_view = "login"
-
-from models import User, Role, Patient, Appointment, Note, Clinic, CallLog, MessageLog, AuditLog
-
+from models import User, Patient, Appointment, AuditLog
 
 # -------------------------------------------------
-# User Loader
+# Role decorator
 # -------------------------------------------------
-@login_manager.user_loader
-def load_user(user_id):
-    return User.query.get(int(user_id))
-
+def role_required(allowed_roles):
+    """Decorator to restrict access by role"""
+    def decorator(f):
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            if "user_role" not in session:
+                flash("You must be logged in to access this page.", "warning")
+                return redirect(url_for("login"))
+            if session["user_role"] not in allowed_roles:
+                flash("You don’t have permission to access this page.", "danger")
+                return redirect(url_for("login"))
+            return f(*args, **kwargs)
+        return decorated_function
+    return decorator
 
 # -------------------------------------------------
 # Routes
 # -------------------------------------------------
+
 @app.route("/")
-def home():
-    if current_user.is_authenticated:
-        return redirect(url_for("dashboard"))
+def index():
     return redirect(url_for("login"))
 
-
-# ---------------- Login ----------------
+# ---------- Auth ----------
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
@@ -51,122 +56,67 @@ def login():
         password = request.form["password"]
 
         user = User.query.filter_by(email=email).first()
-        if user and check_password_hash(user.password_hash, password):
-            login_user(user)
+        if user and check_password_hash(user.password, password):
+            session["user_id"] = user.id
+            session["user_role"] = user.role
             flash("Login successful!", "success")
 
-            # Redirect based on role
-            if user.role and user.role.name == "superadmin":
-                return redirect(url_for("superadmin_dashboard"))
-            elif user.role and user.role.name == "receptionist":
-                return redirect(url_for("receptionist_dashboard"))
-            elif user.role and user.role.name == "doctor":
+            if user.role == "admin" or user.role == "superadmin":
+                return redirect(url_for("admin_dashboard"))
+            elif user.role == "doctor":
                 return redirect(url_for("doctor_dashboard"))
+            elif user.role == "nurse":
+                return redirect(url_for("nurse_dashboard"))
             else:
-                return redirect(url_for("dashboard"))  # fallback
+                return redirect(url_for("receptionist_dashboard"))
         else:
-            flash("Invalid credentials", "danger")
+            flash("Invalid credentials.", "danger")
 
-    return render_template("login.html")
-
+    return render_template("auth/login.html")
 
 @app.route("/logout")
-@login_required
 def logout():
-    logout_user()
-    flash("Logged out successfully!", "info")
+    session.pop("user_id", None)
+    session.pop("user_role", None)
+    flash("Logged out successfully.", "info")
     return redirect(url_for("login"))
 
+# ---------- Dashboards ----------
+@app.route("/admin/dashboard")
+@role_required(["admin", "superadmin"])
+def admin_dashboard():
+    return render_template("dashboards/admin_dashboard.html")
 
-# ---------------- Dashboard Redirect ----------------
-@app.route("/dashboard")
-@login_required
-def dashboard():
-    if current_user.role and current_user.role.name == "superadmin":
-        return redirect(url_for("superadmin_dashboard"))
-    elif current_user.role and current_user.role.name == "receptionist":
-        return redirect(url_for("receptionist_dashboard"))
-    elif current_user.role and current_user.role.name == "doctor":
-        return redirect(url_for("doctor_dashboard"))
-    else:
-        abort(403)
-
-
-# ---------------- Superadmin Dashboard ----------------
-@app.route("/dashboard/superadmin")
-@login_required
-def superadmin_dashboard():
-    if not current_user.role or current_user.role.name != "superadmin":
-        abort(403)
-
-    users = User.query.all()
-    logs = AuditLog.query.order_by(AuditLog.created_at.desc()).limit(20).all()
-    clinics = Clinic.query.all()
-
-    return render_template("superadmin_dashboard.html", users=users, logs=logs, clinics=clinics)
-
-
-# ---------------- Receptionist Dashboard ----------------
-@app.route("/dashboard/receptionist")
-@login_required
-def receptionist_dashboard():
-    if not current_user.role or current_user.role.name != "receptionist":
-        abort(403)
-
-    upcoming_appts = Appointment.query.order_by(Appointment.scheduled_for.asc()).limit(10).all()
-    messages = MessageLog.query.order_by(MessageLog.created_at.desc()).limit(5).all()
-    calls = CallLog.query.order_by(CallLog.created_at.desc()).limit(5).all()
-    patients = Patient.query.order_by(Patient.created_at.desc()).limit(5).all()
-
-    return render_template(
-        "receptionist_dashboard.html",
-        appointments=upcoming_appts,
-        messages=messages,
-        calls=calls,
-        patients=patients,
-    )
-
-
-# ---------------- Doctor Dashboard ----------------
-@app.route("/dashboard/doctor")
-@login_required
+@app.route("/doctor/dashboard")
+@role_required(["doctor", "superadmin"])
 def doctor_dashboard():
-    if not current_user.role or current_user.role.name != "doctor":
-        abort(403)
+    upcoming = Appointment.query.order_by(Appointment.date.asc()).limit(5).all()
+    patients = Patient.query.limit(10).all()
+    return render_template("dashboards/doctor_dashboard.html", upcoming_appointments=upcoming, patients=patients)
 
-    todays_appts = (
-        Appointment.query.filter(
-            Appointment.doctor_id == current_user.id,
-            db.func.date(Appointment.scheduled_for) == date.today()
-        )
-        .order_by(Appointment.scheduled_for.asc())
-        .all()
-    )
-    patients = Patient.query.filter_by(doctor_id=current_user.id).all()
-    notes = Note.query.filter_by(doctor_id=current_user.id).order_by(Note.created_at.desc()).limit(5).all()
+@app.route("/nurse/dashboard")
+@role_required(["nurse", "superadmin"])
+def nurse_dashboard():
+    upcoming = Appointment.query.order_by(Appointment.date.asc()).limit(5).all()
+    patients = Patient.query.limit(10).all()
+    return render_template("dashboards/nurse_dashboard.html", upcoming_appointments=upcoming, patients=patients)
 
-    return render_template(
-        "doctor_dashboard.html",
-        todays_appointments=todays_appts,
-        patients=patients,
-        notes=notes,
-    )
+@app.route("/receptionist/dashboard")
+@role_required(["receptionist", "superadmin"])
+def receptionist_dashboard():
+    upcoming = Appointment.query.order_by(Appointment.date.asc()).limit(5).all()
+    patients = Patient.query.limit(10).all()
+    return render_template("dashboards/receptionist_dashboard.html", upcoming_appointments=upcoming, patients=patients)
 
+# ---------- Audit Logs ----------
+@app.route("/audit/logs")
+@role_required(["admin", "superadmin"])
+def audit_logs():
+    logs = AuditLog.query.order_by(AuditLog.timestamp.desc()).limit(50).all()
+    return render_template("audit/logs.html", logs=logs)
 
-# ---------------- View Patient ----------------
-@app.route("/patients/<int:patient_id>")
-@login_required
-def view_patient(patient_id):
-    patient = Patient.query.get_or_404(patient_id)
-    return render_template("patient_view.html", patient=patient)
-
-
-# ---------------- Audit Log Helper ----------------
-def log_action(user_id, action):
-    log = AuditLog(user_id=user_id, action=action)
-    db.session.add(log)
-    db.session.commit()
-
-
+# -------------------------------------------------
+# Run
+# -------------------------------------------------
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(host="0.0.0.0", port=5000, debug=True)
