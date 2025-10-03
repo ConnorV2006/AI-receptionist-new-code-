@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Nurse Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+    <h1>👩‍⚕️ Nurse Dashboard</h1>
+
+    <section>
+        <h2>Upcoming Appointments</h2>
+        <ul>
+            {% for appt in upcoming_appointments %}
+                <li>{{ appt.date }} - {{ appt.patient.name }}</li>
+            {% endfor %}
+        </ul>
+    </section>
+
+    <section>
+        <h2>Patients</h2>
+        <ul>
+            {% for p in patients %}
+                <li>{{ p.name }} ({{ p.email }})</li>
+            {% endfor %}
+        </ul>
+    </section>
+
+    <section>
+        <h2>Recent Nurse Logs</h2>
+        <ul>
+            {% for log in recent_logs %}
+                <li>[{{ log.timestamp }}] {{ log.action }} - {{ log.details }}</li>
+            {% endfor %}
+        </ul>
+    </section>
+</body>
+</html>
