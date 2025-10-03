@@ -1,12 +1,10 @@
-from datetime import datetime
 from flask_sqlalchemy import SQLAlchemy
-from flask_login import UserMixin
-from werkzeug.security import generate_password_hash, check_password_hash
+from datetime import datetime
 
 db = SQLAlchemy()
 
 # ----------------------------
-# Role Model
+# Roles
 # ----------------------------
 class Role(db.Model):
     __tablename__ = "roles"
@@ -21,9 +19,9 @@ class Role(db.Model):
 
 
 # ----------------------------
-# User Model
+# Users
 # ----------------------------
-class User(UserMixin, db.Model):
+class User(db.Model):
     __tablename__ = "users"
 
     id = db.Column(db.Integer, primary_key=True)
@@ -33,20 +31,17 @@ class User(UserMixin, db.Model):
     role_id = db.Column(db.Integer, db.ForeignKey("roles.id"))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
+    appointments = db.relationship("Appointment", backref="doctor", lazy=True, foreign_keys="Appointment.doctor_id")
+    notes = db.relationship("DoctorNote", backref="doctor", lazy=True, foreign_keys="DoctorNote.doctor_id")
     audit_logs = db.relationship("AuditLog", backref="user", lazy=True)
-
-    def set_password(self, password: str):
-        self.password_hash = generate_password_hash(password)
-
-    def check_password(self, password: str) -> bool:
-        return check_password_hash(self.password_hash, password)
+    nurse_profile = db.relationship("NurseProfile", backref="nurse", uselist=False)
 
     def __repr__(self):
         return f"<User {self.username}>"
 
 
 # ----------------------------
-# Patient Model
+# Patients
 # ----------------------------
 class Patient(db.Model):
     __tablename__ = "patients"
@@ -66,7 +61,7 @@ class Patient(db.Model):
 
 
 # ----------------------------
-# Appointment Model
+# Appointments
 # ----------------------------
 class Appointment(db.Model):
     __tablename__ = "appointments"
@@ -77,10 +72,8 @@ class Appointment(db.Model):
     scheduled_time = db.Column(db.DateTime, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-    doctor = db.relationship("User", foreign_keys=[doctor_id])
-
     def __repr__(self):
-        return f"<Appointment Doctor={self.doctor_id} Patient={self.patient_id} At={self.scheduled_time}>"
+        return f"<Appointment Doctor {self.doctor_id} Patient {self.patient_id} at {self.scheduled_time}>"
 
 
 # ----------------------------
@@ -95,10 +88,8 @@ class DoctorNote(db.Model):
     content = db.Column(db.Text, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-    doctor = db.relationship("User", foreign_keys=[doctor_id])
-
     def __repr__(self):
-        return f"<DoctorNote Doctor={self.doctor_id} Patient={self.patient_id}>"
+        return f"<DoctorNote Doctor {self.doctor_id} Patient {self.patient_id}>"
 
 
 # ----------------------------
@@ -112,10 +103,8 @@ class NurseProfile(db.Model):
     department = db.Column(db.String(120))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-    nurse = db.relationship("User", foreign_keys=[nurse_id])
-
     def __repr__(self):
-        return f"<NurseProfile Nurse={self.nurse_id}>"
+        return f"<NurseProfile Nurse {self.nurse_id} Department {self.department}>"
 
 
 # ----------------------------
@@ -131,11 +120,11 @@ class AuditLog(db.Model):
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
 
     def __repr__(self):
-        return f"<AuditLog User={self.user_id} Action={self.action}>"
+        return f"<AuditLog User {self.user_id} Action {self.action}>"
 
 
 # ----------------------------
-# Twilio Logs (SMS, Call, Fax)
+# Twilio Logs
 # ----------------------------
 class TwilioLog(db.Model):
     __tablename__ = "twilio_logs"
@@ -149,4 +138,4 @@ class TwilioLog(db.Model):
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
 
     def __repr__(self):
-        return f"<TwilioLog {self.type.upper()} {self.from_number} -> {self.to_number} ({self.status})>"
+        return f"<TwilioLog {self.type.upper()} from {self.from_number} to {self.to_number}>"
