@@ -17,76 +17,53 @@ depends_on = None
 
 
 def upgrade():
-    connection = op.get_bind()
+    conn = op.get_bind()
 
     # Insert demo patients
-    patients = [
-        {"id": 1, "first_name": "Alice", "last_name": "Smith", "email": "alice@example.com"},
-        {"id": 2, "first_name": "Bob", "last_name": "Johnson", "email": "bob@example.com"},
-    ]
-    op.bulk_insert(
-        sa.table(
-            "patients",
-            sa.column("id", sa.Integer),
-            sa.column("first_name", sa.String),
-            sa.column("last_name", sa.String),
-            sa.column("email", sa.String),
-        ),
-        patients,
+    conn.execute(
+        sa.text(
+            """
+            INSERT INTO patients (first_name, last_name, email, phone, date_of_birth)
+            VALUES
+                ('Alice', 'Smith', 'alice.smith@example.com', '+15550000001', '1990-01-01'),
+                ('Bob', 'Johnson', 'bob.johnson@example.com', '+15550000002', '1985-05-12'),
+                ('Charlie', 'Brown', 'charlie.brown@example.com', '+15550000003', '1978-09-23')
+            ON CONFLICT DO NOTHING;
+            """
+        )
     )
 
-    # Insert demo appointments (doctor_id 1 assumed)
-    now = datetime.utcnow().replace(hour=10, minute=0, second=0, microsecond=0)
-    appointments = [
-        {"id": 1, "patient_id": 1, "doctor_id": 1, "scheduled_time": now},
-        {"id": 2, "patient_id": 2, "doctor_id": 1, "scheduled_time": now + timedelta(hours=1)},
-    ]
-    op.bulk_insert(
-        sa.table(
-            "appointments",
-            sa.column("id", sa.Integer),
-            sa.column("patient_id", sa.Integer),
-            sa.column("doctor_id", sa.Integer),
-            sa.column("scheduled_time", sa.DateTime),
-        ),
-        appointments,
+    # Insert demo appointments for doctor_id=1
+    conn.execute(
+        sa.text(
+            """
+            INSERT INTO appointments (patient_id, doctor_id, scheduled_time, status, reason)
+            SELECT p.id, 1, NOW() + (i * interval '1 day'), 'scheduled', 'Routine check-up'
+            FROM patients p, generate_series(1, 3) g(i)
+            ON CONFLICT DO NOTHING;
+            """
+        )
     )
 
-    # Insert demo doctor notes
-    notes = [
-        {
-            "id": 1,
-            "patient_id": 1,
-            "doctor_id": 1,
-            "appointment_id": 1,
-            "note": "Routine checkup. Patient doing well.",
-            "created_at": now,
-        },
-        {
-            "id": 2,
-            "patient_id": 2,
-            "doctor_id": 1,
-            "appointment_id": 2,
-            "note": "Follow-up visit scheduled.",
-            "created_at": now + timedelta(hours=1),
-        },
-    ]
-    op.bulk_insert(
-        sa.table(
-            "doctor_notes",
-            sa.column("id", sa.Integer),
-            sa.column("patient_id", sa.Integer),
-            sa.column("doctor_id", sa.Integer),
-            sa.column("appointment_id", sa.Integer),
-            sa.column("note", sa.Text),
-            sa.column("created_at", sa.DateTime),
-        ),
-        notes,
+    # Insert demo doctor notes linked to doctor_id=1
+    conn.execute(
+        sa.text(
+            """
+            INSERT INTO doctor_notes (doctor_id, patient_id, note, created_at)
+            SELECT 1, p.id, 'Initial consultation notes for ' || p.first_name, NOW()
+            FROM patients p
+            ON CONFLICT DO NOTHING;
+            """
+        )
     )
 
 
 def downgrade():
-    connection = op.get_bind()
-    connection.execute(sa.text("DELETE FROM doctor_notes WHERE id IN (1,2)"))
-    connection.execute(sa.text("DELETE FROM appointments WHERE id IN (1,2)"))
-    connection.execute(sa.text("DELETE FROM patients WHERE id IN (1,2)"))
+    conn = op.get_bind()
+    conn.execute(sa.text("DELETE FROM doctor_notes WHERE doctor_id = 1;"))
+    conn.execute(sa.text("DELETE FROM appointments WHERE doctor_id = 1;"))
+    conn.execute(
+        sa.text(
+            "DELETE FROM patients WHERE email IN ('alice.smith@example.com', 'bob.johnson@example.com', 'charlie.brown@example.com');"
+        )
+    )
