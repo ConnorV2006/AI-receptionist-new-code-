@@ -3,9 +3,9 @@ from datetime import datetime
 
 db = SQLAlchemy()
 
-# ----------------------------
+# =========================================================
 # Roles
-# ----------------------------
+# =========================================================
 class Role(db.Model):
     __tablename__ = "roles"
 
@@ -18,9 +18,9 @@ class Role(db.Model):
         return f"<Role {self.name}>"
 
 
-# ----------------------------
+# =========================================================
 # Users
-# ----------------------------
+# =========================================================
 class User(db.Model):
     __tablename__ = "users"
 
@@ -31,18 +31,24 @@ class User(db.Model):
     role_id = db.Column(db.Integer, db.ForeignKey("roles.id"))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-    appointments = db.relationship("Appointment", backref="doctor", lazy=True, foreign_keys="Appointment.doctor_id")
-    notes = db.relationship("DoctorNote", backref="doctor", lazy=True, foreign_keys="DoctorNote.doctor_id")
+    # Relationships
+    appointments = db.relationship(
+        "Appointment", backref="doctor", lazy=True, foreign_keys="Appointment.doctor_id"
+    )
+    notes = db.relationship(
+        "DoctorNote", backref="doctor", lazy=True, foreign_keys="DoctorNote.doctor_id"
+    )
     audit_logs = db.relationship("AuditLog", backref="user", lazy=True)
     nurse_profile = db.relationship("NurseProfile", backref="nurse", uselist=False)
+    receptionist_profile = db.relationship("ReceptionistProfile", backref="receptionist", uselist=False)
 
     def __repr__(self):
-        return f"<User {self.username}>"
+        return f"<User {self.username} ({self.role.name if self.role else 'No Role'})>"
 
 
-# ----------------------------
+# =========================================================
 # Patients
-# ----------------------------
+# =========================================================
 class Patient(db.Model):
     __tablename__ = "patients"
 
@@ -60,9 +66,9 @@ class Patient(db.Model):
         return f"<Patient {self.first_name} {self.last_name}>"
 
 
-# ----------------------------
+# =========================================================
 # Appointments
-# ----------------------------
+# =========================================================
 class Appointment(db.Model):
     __tablename__ = "appointments"
 
@@ -73,12 +79,12 @@ class Appointment(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     def __repr__(self):
-        return f"<Appointment Doctor {self.doctor_id} Patient {self.patient_id} at {self.scheduled_time}>"
+        return f"<Appointment Doctor={self.doctor_id} Patient={self.patient_id} at {self.scheduled_time}>"
 
 
-# ----------------------------
+# =========================================================
 # Doctor Notes
-# ----------------------------
+# =========================================================
 class DoctorNote(db.Model):
     __tablename__ = "doctor_notes"
 
@@ -89,12 +95,12 @@ class DoctorNote(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     def __repr__(self):
-        return f"<DoctorNote Doctor {self.doctor_id} Patient {self.patient_id}>"
+        return f"<DoctorNote Doctor={self.doctor_id} Patient={self.patient_id}>"
 
 
-# ----------------------------
+# =========================================================
 # Nurse Profiles
-# ----------------------------
+# =========================================================
 class NurseProfile(db.Model):
     __tablename__ = "nurse_profiles"
 
@@ -104,12 +110,27 @@ class NurseProfile(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     def __repr__(self):
-        return f"<NurseProfile Nurse {self.nurse_id} Department {self.department}>"
+        return f"<NurseProfile Nurse={self.nurse_id} Department={self.department}>"
 
 
-# ----------------------------
+# =========================================================
+# Receptionist Profiles
+# =========================================================
+class ReceptionistProfile(db.Model):
+    __tablename__ = "receptionist_profiles"
+
+    id = db.Column(db.Integer, primary_key=True)
+    receptionist_id = db.Column(db.Integer, db.ForeignKey("users.id"), unique=True, nullable=False)
+    front_desk = db.Column(db.String(120))  # e.g., "Main Desk", "ER Desk"
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f"<ReceptionistProfile Receptionist={self.receptionist_id} Desk={self.front_desk}>"
+
+
+# =========================================================
 # Audit Logs
-# ----------------------------
+# =========================================================
 class AuditLog(db.Model):
     __tablename__ = "audit_logs"
 
@@ -120,12 +141,12 @@ class AuditLog(db.Model):
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
 
     def __repr__(self):
-        return f"<AuditLog User {self.user_id} Action {self.action}>"
+        return f"<AuditLog User={self.user_id} Action={self.action}>"
 
 
-# ----------------------------
-# Twilio Logs
-# ----------------------------
+# =========================================================
+# Twilio Logs (SMS, Calls, Faxes)
+# =========================================================
 class TwilioLog(db.Model):
     __tablename__ = "twilio_logs"
 
