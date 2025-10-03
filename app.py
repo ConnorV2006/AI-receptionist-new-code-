@@ -1,22 +1,12 @@
 import os
-from flask import Flask, render_template, redirect, url_for, request, abort, Response
+from datetime import datetime, date
+import sqlalchemy as sa
+from flask import Flask, render_template, redirect, url_for, request, flash, abort
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
-from flask_login import LoginManager, login_user, logout_user, login_required, current_user
+from flask_login import LoginManager, login_user, login_required, logout_user, current_user
 from werkzeug.security import check_password_hash
-from datetime import datetime
-import csv
-from io import StringIO, BytesIO
 
-# PDF export
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-from reportlab.lib.pagesizes import A4
-from reportlab.lib import colors
-from reportlab.lib.styles import getSampleStyleSheet
-
-# -------------------------------------------------
-# App + Config
-# -------------------------------------------------
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get("SECRET_KEY", "dev_secret")
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get("DATABASE_URL")
@@ -25,204 +15,137 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 migrate = Migrate(app, db)
 
-# -------------------------------------------------
-# Login Manager
-# -------------------------------------------------
-login_manager = LoginManager(app)
+login_manager = LoginManager()
+login_manager.init_app(app)
 login_manager.login_view = "login"
 
-from models import User, AuditLog, Clinic, Patient, Visit, Paystub, Appointment, Reminder, FileUpload, CallLog, MessageLog, Role
-from utils import is_superadmin
+from models import User, Patient, Appointment, CallLog, MessageLog, Clinic, AuditLog, Note
 
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))
 
-# -------------------------------------------------
-# Auth Routes
-# -------------------------------------------------
+# Login route with role redirects
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
-        email = request.form.get("email")
-        password = request.form.get("password")
+        email = request.form["email"]
+        password = request.form["password"]
         user = User.query.filter_by(email=email).first()
-        if user and user.check_password(password):
+        if user and check_password_hash(user.password_hash, password):
             login_user(user)
-            return redirect(url_for("dashboard"))
+            flash("Login successful!", "success")
+            if user.role and user.role.name == "superadmin":
+                return redirect(url_for("superadmin_dashboard"))
+            elif user.role and user.role.name == "receptionist":
+                return redirect(url_for("receptionist_dashboard"))
+            elif user.role and user.role.name == "doctor":
+                return redirect(url_for("doctor_dashboard"))
+            else:
+                return redirect(url_for("dashboard"))
         else:
-            return render_template("login.html", error="Invalid credentials")
+            flash("Invalid credentials", "danger")
     return render_template("login.html")
-
 
 @app.route("/logout")
 @login_required
 def logout():
     logout_user()
+    flash("Logged out successfully.", "info")
     return redirect(url_for("login"))
 
-# -------------------------------------------------
-# Dashboard
-# -------------------------------------------------
-@app.route("/")
+# Fallback dashboard redirect
+@app.route("/dashboard")
 @login_required
 def dashboard():
-    return render_template("dashboard.html")
-
-# -------------------------------------------------
-# Audit Logs Routes
-# -------------------------------------------------
-@app.route("/superadmin/audit-logs")
-@login_required
-def view_audit_logs():
-    if not is_superadmin():
-        abort(403)
-    logs = filter_audit_logs()
-    return render_template("audit_logs.html", logs=logs)
-
-
-@app.route("/superadmin/audit-logs/export")
-@login_required
-def export_audit_logs():
-    if not is_superadmin():
+    if current_user.role and current_user.role.name == "superadmin":
+        return redirect(url_for("superadmin_dashboard"))
+    elif current_user.role and current_user.role.name == "receptionist":
+        return redirect(url_for("receptionist_dashboard"))
+    elif current_user.role and current_user.role.name == "doctor":
+        return redirect(url_for("doctor_dashboard"))
+    else:
         abort(403)
 
-    logs = filter_audit_logs()
+# Superadmin dashboard
+@app.route("/dashboard/superadmin")
+@login_required
+def superadmin_dashboard():
+    if not current_user.role or current_user.role.name != "superadmin":
+        abort(403)
 
-    si = StringIO()
-    writer = csv.writer(si)
-    writer.writerow(["ID", "User", "Action", "Details", "Timestamp"])
-    for log in logs:
-        writer.writerow([
-            log.id,
-            log.user.email if log.user else "Unauthenticated",
-            log.action,
-            log.details or "-",
-            log.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
-        ])
-    output = si.getvalue().encode("utf-8")
-    si.close()
+    users_count = User.query.count()
+    clinics_count = Clinic.query.count()
+    appointments_count = Appointment.query.count()
+    audit_logs = AuditLog.query.order_by(AuditLog.created_at.desc()).limit(10).all()
+    audit_logs_count = AuditLog.query.count()
 
-    return Response(
-        output,
-        mimetype="text/csv",
-        headers={"Content-Disposition": "attachment; filename=audit_logs.csv"},
+    return render_template(
+        "superadmin_dashboard.html",
+        users_count=users_count,
+        clinics_count=clinics_count,
+        appointments_count=appointments_count,
+        audit_logs=audit_logs,
+        audit_logs_count=audit_logs_count,
     )
 
-
-@app.route("/superadmin/audit-logs/export/pdf")
+# Receptionist dashboard
+@app.route("/dashboard/receptionist")
 @login_required
-def export_audit_logs_pdf():
-    if not is_superadmin():
+def receptionist_dashboard():
+    if not current_user.role or current_user.role.name != "receptionist":
         abort(403)
 
-    logs = filter_audit_logs()
+    clinic = Clinic.query.first()
 
-    buffer = BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4)
-    styles = getSampleStyleSheet()
-    elements = []
+    patients_count = Patient.query.filter_by(clinic_id=clinic.id).count()
+    appointments_count = Appointment.query.join(Patient).filter(Patient.clinic_id==clinic.id).count()
+    messages_count = MessageLog.query.filter_by(clinic_id=clinic.id).count()
 
-    elements.append(Paragraph("Audit Logs Report", styles["Title"]))
-    elements.append(Spacer(1, 12))
+    appointments = Appointment.query.join(Patient).filter(Patient.clinic_id==clinic.id).order_by(Appointment.scheduled_for.asc()).limit(5).all()
+    calls = CallLog.query.filter_by(clinic_id=clinic.id).order_by(CallLog.created_at.desc()).limit(5).all()
+    messages = MessageLog.query.filter_by(clinic_id=clinic.id).order_by(MessageLog.created_at.desc()).limit(5).all()
 
-    data = [["ID", "User", "Action", "Details", "Timestamp"]]
-    for log in logs:
-        data.append([
-            str(log.id),
-            log.user.email if log.user else "Unauthenticated",
-            log.action,
-            log.details or "-",
-            log.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
-        ])
-
-    table = Table(data, repeatRows=1)
-    table.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#333333")),
-        ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
-        ("ALIGN", (0, 0), (-1, -1), "LEFT"),
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("BOTTOMPADDING", (0, 0), (-1, 0), 12),
-        ("BACKGROUND", (0, 1), (-1, -1), colors.beige),
-        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-    ]))
-    elements.append(table)
-
-    doc.build(elements)
-    buffer.seek(0)
-
-    return Response(
-        buffer.getvalue(),
-        mimetype="application/pdf",
-        headers={"Content-Disposition": "attachment; filename=audit_logs.pdf"},
+    return render_template(
+        "receptionist_dashboard.html",
+        patients_count=patients_count,
+        appointments_count=appointments_count,
+        messages_count=messages_count,
+        appointments=appointments,
+        calls=calls,
+        messages=messages,
     )
 
-
-@app.route("/superadmin/audit-logs/export/all")
+# Doctor dashboard
+@app.route("/dashboard/doctor")
 @login_required
-def export_all_audit_logs():
-    if not is_superadmin():
+def doctor_dashboard():
+    if not current_user.role or current_user.role.name != "doctor":
         abort(403)
 
-    logs = AuditLog.query.order_by(AuditLog.timestamp.desc()).all()
-
-    si = StringIO()
-    writer = csv.writer(si)
-    writer.writerow(["ID", "User", "Action", "Details", "Timestamp"])
-    for log in logs:
-        writer.writerow([
-            log.id,
-            log.user.email if log.user else "Unauthenticated",
-            log.action,
-            log.details or "-",
-            log.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
-        ])
-    output = si.getvalue().encode("utf-8")
-    si.close()
-
-    return Response(
-        output,
-        mimetype="text/csv",
-        headers={"Content-Disposition": "attachment; filename=audit_logs_full.csv"},
+    todays_appointments = (
+        Appointment.query.filter(
+            Appointment.doctor_id == current_user.id,
+            sa.func.date(Appointment.scheduled_for) == date.today()
+        )
+        .order_by(Appointment.scheduled_for.asc())
+        .all()
     )
 
+    patients = Patient.query.filter_by(doctor_id=current_user.id).all()
+    notes = (
+        Note.query.filter_by(doctor_id=current_user.id)
+        .order_by(Note.created_at.desc())
+        .limit(5)
+        .all()
+    )
 
-# -------------------------------------------------
-# Shared Filtering Logic
-# -------------------------------------------------
-def filter_audit_logs():
-    query = AuditLog.query
+    return render_template(
+        "doctor_dashboard.html",
+        todays_appointments=todays_appointments,
+        patients=patients,
+        notes=notes
+    )
 
-    user_email = request.args.get("user")
-    if user_email:
-        query = query.join(User).filter(User.email.ilike(f"%{user_email}%"))
-
-    action = request.args.get("action")
-    if action:
-        query = query.filter(AuditLog.action.ilike(f"%{action}%"))
-
-    start = request.args.get("start")
-    end = request.args.get("end")
-
-    if start:
-        try:
-            start_date = datetime.strptime(start, "%Y-%m-%d")
-            query = query.filter(AuditLog.timestamp >= start_date)
-        except ValueError:
-            pass
-
-    if end:
-        try:
-            end_date = datetime.strptime(end, "%Y-%m-%d")
-            query = query.filter(AuditLog.timestamp <= end_date)
-        except ValueError:
-            pass
-
-    return query.order_by(AuditLog.timestamp.desc()).all()
-
-
-# -------------------------------------------------
-# Run
-# -------------------------------------------------
 if __name__ == "__main__":
     app.run(debug=True)
