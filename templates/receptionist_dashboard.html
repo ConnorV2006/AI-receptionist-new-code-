@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container mt-4">
+  <h2>📊 Receptionist Dashboard</h2>
+  <div class="row text-center">
+    <div class="col-md-4"><div class="card"><div class="card-body"><h5>Patients</h5><h2>{{ patients_count }}</h2></div></div></div>
+    <div class="col-md-4"><div class="card"><div class="card-body"><h5>Appointments</h5><h2>{{ appointments_count }}</h2></div></div></div>
+    <div class="col-md-4"><div class="card"><div class="card-body"><h5>Messages</h5><h2>{{ messages_count }}</h2></div></div></div>
+  </div>
+  <h4 class="mt-5">📅 Upcoming Appointments</h4>
+  <ul class="list-group">{% for appt in appointments %}<li class="list-group-item">{{ appt.patient.name }} – {{ appt.scheduled_for.strftime('%Y-%m-%d %H:%M') }}</li>{% endfor %}</ul>
+  <h4 class="mt-5">📞 Recent Calls</h4>
+  <ul class="list-group">{% for call in calls %}<li class="list-group-item">{{ call.from_number }} – {{ call.status }} ({{ call.duration }}s)</li>{% endfor %}</ul>
+  <h4 class="mt-5">💬 Recent Messages</h4>
+  <ul class="list-group">{% for msg in messages %}<li class="list-group-item">{{ msg.from_number }} → {{ msg.to_number }}: {{ msg.body }}</li>{% endfor %}</ul>
+</div>
+{% endblock %}
