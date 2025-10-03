@@ -1,13 +1,12 @@
-"""Add partial index for future appointments on (doctor_id, scheduled_time)
+"""Add partial index for future appointments
 
 Revision ID: 0012_add_partial_future_index
 Revises: 0011_add_doctor_time_composite
 Create Date: 2025-10-03
 """
-
 from alembic import op
 
-# revision identifiers, used by Alembic.
+# Revision identifiers, used by Alembic.
 revision = "0012_add_partial_future_index"
 down_revision = "0011_add_doctor_time_composite"
 branch_labels = None
@@ -15,17 +14,20 @@ depends_on = None
 
 
 def upgrade():
-    # Partial index: only future appointments
+    # Use AUTOCOMMIT so CREATE INDEX CONCURRENTLY can run outside of a tx block
     op.execute(
         """
         CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_appointments_doctor_scheduled_future
         ON appointments (doctor_id, scheduled_time)
         WHERE scheduled_time >= NOW();
-        """
+        """,
+        execution_options={"isolation_level": "AUTOCOMMIT"}
     )
 
 
 def downgrade():
+    # Drop the index with AUTOCOMMIT as well
     op.execute(
-        "DROP INDEX CONCURRENTLY IF EXISTS ix_appointments_doctor_scheduled_future;"
+        "DROP INDEX CONCURRENTLY IF EXISTS ix_appointments_doctor_scheduled_future;",
+        execution_options={"isolation_level": "AUTOCOMMIT"}
     )
