@@ -1,136 +1,141 @@
 import os
-import logging
-from flask import Flask, render_template, request, redirect, url_for, flash, session
+from flask import Flask, jsonify, render_template_string
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
-from flask_login import LoginManager, login_user, logout_user, login_required, current_user
+from datetime import datetime
 
 # -------------------------------------------------
-# App Config
+# App + Config
 # -------------------------------------------------
 app = Flask(__name__)
-
-# Secret key
 app.config['SECRET_KEY'] = os.environ.get("SECRET_KEY", "dev_secret")
-
-# Database connection
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get("DATABASE_URL")
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-# Initialize DB and Migrate
 db = SQLAlchemy(app)
 migrate = Migrate(app, db)
 
-# -------------------------------------------------
-# Logging
-# -------------------------------------------------
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-# -------------------------------------------------
-# Login Manager
-# -------------------------------------------------
-login_manager = LoginManager()
-login_manager.init_app(app)
-login_manager.login_view = "login"
-
-# -------------------------------------------------
 # Import models
-# -------------------------------------------------
-from models import User, Role, Patient, Appointment, AuditLog, Clinic, DoctorNote, NurseProfile
-
-@login_manager.user_loader
-def load_user(user_id):
-    return User.query.get(int(user_id))
+from models import (
+    User, Role, Patient, Appointment, DoctorNote,
+    NurseProfile, ReceptionistProfile, AuditLog, TwilioLog
+)
 
 # -------------------------------------------------
-# Routes
+# Home Route
 # -------------------------------------------------
 @app.route("/")
-def index():
-    if current_user.is_authenticated:
-        return redirect(url_for("dashboard"))
-    return redirect(url_for("login"))
+def home():
+    return render_template_string("""
+    <h1>AI Receptionist Demo</h1>
+    <ul>
+        <li><a href="/patients">Patients</a></li>
+        <li><a href="/appointments">Appointments</a></li>
+        <li><a href="/notes">Doctor Notes</a></li>
+        <li><a href="/nurse_profiles">Nurse Profiles</a></li>
+        <li><a href="/receptionist_profiles">Receptionist Profiles</a></li>
+        <li><a href="/audit_logs">Audit Logs</a></li>
+        <li><a href="/twilio_logs">Twilio Logs (SMS, Calls, Fax)</a></li>
+    </ul>
+    """)
 
+# -------------------------------------------------
+# Patients
+# -------------------------------------------------
+@app.route("/patients")
+def list_patients():
+    patients = Patient.query.all()
+    return jsonify([{
+        "id": p.id,
+        "first_name": p.first_name,
+        "last_name": p.last_name,
+        "email": p.email,
+        "phone": p.phone
+    } for p in patients])
 
-@app.route("/login", methods=["GET", "POST"])
-def login():
-    if request.method == "POST":
-        username = request.form.get("username")
-        password = request.form.get("password")
-        user = User.query.filter_by(username=username).first()
+# -------------------------------------------------
+# Appointments
+# -------------------------------------------------
+@app.route("/appointments")
+def list_appointments():
+    appts = Appointment.query.order_by(Appointment.scheduled_time).all()
+    return jsonify([{
+        "id": a.id,
+        "patient_id": a.patient_id,
+        "doctor_id": a.doctor_id,
+        "scheduled_time": a.scheduled_time.isoformat()
+    } for a in appts])
 
-        if user and user.check_password(password):
-            login_user(user)
-            flash("Login successful!", "success")
-            return redirect(url_for("dashboard"))
-        else:
-            flash("Invalid username or password", "danger")
+# -------------------------------------------------
+# Doctor Notes
+# -------------------------------------------------
+@app.route("/notes")
+def list_notes():
+    notes = DoctorNote.query.all()
+    return jsonify([{
+        "id": n.id,
+        "doctor_id": n.doctor_id,
+        "patient_id": n.patient_id,
+        "content": n.content,
+        "created_at": n.created_at.isoformat() if n.created_at else None
+    } for n in notes])
 
-    return render_template("login.html")
+# -------------------------------------------------
+# Nurse Profiles
+# -------------------------------------------------
+@app.route("/nurse_profiles")
+def list_nurse_profiles():
+    nurses = NurseProfile.query.all()
+    return jsonify([{
+        "id": n.id,
+        "nurse_id": n.nurse_id,
+        "department": n.department
+    } for n in nurses])
 
+# -------------------------------------------------
+# Receptionist Profiles
+# -------------------------------------------------
+@app.route("/receptionist_profiles")
+def list_receptionist_profiles():
+    recs = ReceptionistProfile.query.all()
+    return jsonify([{
+        "id": r.id,
+        "receptionist_id": r.receptionist_id,
+        "front_desk": r.front_desk
+    } for r in recs])
 
-@app.route("/logout")
-@login_required
-def logout():
-    logout_user()
-    flash("Logged out successfully", "success")
-    return redirect(url_for("login"))
-
-
-@app.route("/dashboard")
-@login_required
-def dashboard():
-    """Split dashboard based on role"""
-    if current_user.role and current_user.role.name == "superadmin":
-        return render_template("dashboards/superadmin_dashboard.html", user=current_user)
-    elif current_user.role and current_user.role.name == "doctor":
-        return render_template("dashboards/doctor_dashboard.html", user=current_user)
-    elif current_user.role and current_user.role.name == "nurse":
-        return render_template("dashboards/nurse_dashboard.html", user=current_user)
-    elif current_user.role and current_user.role.name == "receptionist":
-        return render_template("dashboards/receptionist_dashboard.html", user=current_user)
-    else:
-        flash("No dashboard available for your role.", "warning")
-        return redirect(url_for("logout"))
-
-
-@app.route("/audit-logs")
-@login_required
-def audit_logs():
-    """View system audit logs (restricted to superadmin)."""
-    if not current_user.role or current_user.role.name != "superadmin":
-        flash("Access denied: Superadmin only.", "danger")
-        return redirect(url_for("dashboard"))
-
+# -------------------------------------------------
+# Audit Logs
+# -------------------------------------------------
+@app.route("/audit_logs")
+def list_audit_logs():
     logs = AuditLog.query.order_by(AuditLog.timestamp.desc()).all()
-    return render_template("audit_logs.html", logs=logs)
+    return jsonify([{
+        "id": l.id,
+        "user_id": l.user_id,
+        "action": l.action,
+        "details": l.details,
+        "timestamp": l.timestamp.isoformat() if l.timestamp else None
+    } for l in logs])
 
 # -------------------------------------------------
-# CLI command for manual seeding (optional)
+# Twilio Logs (SMS, Calls, Faxes)
 # -------------------------------------------------
-@app.cli.command("seed")
-def seed_command():
-    """Run the seeding script manually if needed."""
-    from seed import run_seed
-    run_seed()
-    print("✅ Database seeded.")
-from flask.cli import with_appcontext
-import click
-from seed_demo import run_demo_seed  # this should be in seed_demo.py (separate file)
-
-@click.command("seed_demo")
-@with_appcontext
-def seed_demo_command():
-    """Seed demo data for showcasing the system."""
-    run_demo_seed()
-    click.echo("🌱 Demo data seeded successfully!")
-
-app.cli.add_command(seed_demo_command)
-
+@app.route("/twilio_logs")
+def list_twilio_logs():
+    logs = TwilioLog.query.order_by(TwilioLog.timestamp.desc()).all()
+    return jsonify([{
+        "id": t.id,
+        "type": t.type,
+        "from_number": t.from_number,
+        "to_number": t.to_number,
+        "content": t.content,
+        "status": t.status,
+        "timestamp": t.timestamp.isoformat() if t.timestamp else None
+    } for t in logs])
 
 # -------------------------------------------------
-# App entry
+# Run
 # -------------------------------------------------
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
