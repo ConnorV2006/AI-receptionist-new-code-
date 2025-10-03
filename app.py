@@ -1,8 +1,7 @@
 import os
-from flask import Flask, jsonify, render_template_string
+from flask import Flask, render_template_string
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
-from datetime import datetime
 
 # -------------------------------------------------
 # App + Config
@@ -22,22 +21,62 @@ from models import (
 )
 
 # -------------------------------------------------
+# Base HTML Dashboard Layout
+# -------------------------------------------------
+BASE_DASHBOARD = """
+<!DOCTYPE html>
+<html>
+<head>
+  <title>AI Receptionist Demo</title>
+  <style>
+    body { margin: 0; font-family: Arial, sans-serif; background: #f7f9fc; }
+    header { background: #8B0000; color: white; padding: 15px; font-size: 22px; }
+    .container { display: flex; }
+    nav { width: 220px; background: #333; min-height: 100vh; color: white; padding: 20px 0; }
+    nav h3 { margin-left: 20px; font-size: 16px; color: #ccc; text-transform: uppercase; }
+    nav a { display: block; color: white; padding: 12px 20px; text-decoration: none; }
+    nav a:hover { background: #444; }
+    main { flex: 1; padding: 20px; }
+    h1 { margin-top: 0; color: #333; }
+    table { border-collapse: collapse; width: 100%; margin-top: 15px; background: white; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+    th { background: #f2f2f2; }
+    tr:hover { background: #f9f9f9; }
+  </style>
+</head>
+<body>
+  <header>AI Receptionist Dashboard</header>
+  <div class="container">
+    <nav>
+      <h3>Navigation</h3>
+      <a href="/">🏠 Home</a>
+      <a href="/patients">👩‍⚕️ Patients</a>
+      <a href="/appointments">📅 Appointments</a>
+      <a href="/notes">📝 Doctor Notes</a>
+      <a href="/nurse_profiles">👩‍⚕️ Nurses</a>
+      <a href="/receptionist_profiles">👩 Receptionists</a>
+      <a href="/audit_logs">📊 Audit Logs</a>
+      <a href="/twilio_logs">📞 Twilio Logs</a>
+    </nav>
+    <main>
+      <h1>{{ title }}</h1>
+      {{ body|safe }}
+    </main>
+  </div>
+</body>
+</html>
+"""
+
+# -------------------------------------------------
 # Home Route
 # -------------------------------------------------
 @app.route("/")
 def home():
-    return render_template_string("""
-    <h1>AI Receptionist Demo</h1>
-    <ul>
-        <li><a href="/patients">Patients</a></li>
-        <li><a href="/appointments">Appointments</a></li>
-        <li><a href="/notes">Doctor Notes</a></li>
-        <li><a href="/nurse_profiles">Nurse Profiles</a></li>
-        <li><a href="/receptionist_profiles">Receptionist Profiles</a></li>
-        <li><a href="/audit_logs">Audit Logs</a></li>
-        <li><a href="/twilio_logs">Twilio Logs (SMS, Calls, Fax)</a></li>
-    </ul>
-    """)
+    body = """
+    <p>Welcome to the <b>AI Receptionist Demo</b> dashboard.</p>
+    <p>Use the navigation menu on the left to explore demo data for patients, appointments, doctor notes, staff profiles, logs, and Twilio activity.</p>
+    """
+    return render_template_string(BASE_DASHBOARD, title="Home", body=body)
 
 # -------------------------------------------------
 # Patients
@@ -45,13 +84,11 @@ def home():
 @app.route("/patients")
 def list_patients():
     patients = Patient.query.all()
-    return jsonify([{
-        "id": p.id,
-        "first_name": p.first_name,
-        "last_name": p.last_name,
-        "email": p.email,
-        "phone": p.phone
-    } for p in patients])
+    body = "<table><tr><th>ID</th><th>Name</th><th>Email</th><th>Phone</th></tr>"
+    for p in patients:
+        body += f"<tr><td>{p.id}</td><td>{p.first_name} {p.last_name}</td><td>{p.email}</td><td>{p.phone}</td></tr>"
+    body += "</table>"
+    return render_template_string(BASE_DASHBOARD, title="Patients", body=body)
 
 # -------------------------------------------------
 # Appointments
@@ -59,12 +96,11 @@ def list_patients():
 @app.route("/appointments")
 def list_appointments():
     appts = Appointment.query.order_by(Appointment.scheduled_time).all()
-    return jsonify([{
-        "id": a.id,
-        "patient_id": a.patient_id,
-        "doctor_id": a.doctor_id,
-        "scheduled_time": a.scheduled_time.isoformat()
-    } for a in appts])
+    body = "<table><tr><th>ID</th><th>Patient</th><th>Doctor</th><th>Time</th></tr>"
+    for a in appts:
+        body += f"<tr><td>{a.id}</td><td>{a.patient_id}</td><td>{a.doctor_id}</td><td>{a.scheduled_time}</td></tr>"
+    body += "</table>"
+    return render_template_string(BASE_DASHBOARD, title="Appointments", body=body)
 
 # -------------------------------------------------
 # Doctor Notes
@@ -72,13 +108,11 @@ def list_appointments():
 @app.route("/notes")
 def list_notes():
     notes = DoctorNote.query.all()
-    return jsonify([{
-        "id": n.id,
-        "doctor_id": n.doctor_id,
-        "patient_id": n.patient_id,
-        "content": n.content,
-        "created_at": n.created_at.isoformat() if n.created_at else None
-    } for n in notes])
+    body = "<table><tr><th>ID</th><th>Doctor</th><th>Patient</th><th>Note</th><th>Created</th></tr>"
+    for n in notes:
+        body += f"<tr><td>{n.id}</td><td>{n.doctor_id}</td><td>{n.patient_id}</td><td>{n.content}</td><td>{n.created_at}</td></tr>"
+    body += "</table>"
+    return render_template_string(BASE_DASHBOARD, title="Doctor Notes", body=body)
 
 # -------------------------------------------------
 # Nurse Profiles
@@ -86,11 +120,11 @@ def list_notes():
 @app.route("/nurse_profiles")
 def list_nurse_profiles():
     nurses = NurseProfile.query.all()
-    return jsonify([{
-        "id": n.id,
-        "nurse_id": n.nurse_id,
-        "department": n.department
-    } for n in nurses])
+    body = "<table><tr><th>ID</th><th>User</th><th>Department</th></tr>"
+    for n in nurses:
+        body += f"<tr><td>{n.id}</td><td>{n.nurse_id}</td><td>{n.department}</td></tr>"
+    body += "</table>"
+    return render_template_string(BASE_DASHBOARD, title="Nurse Profiles", body=body)
 
 # -------------------------------------------------
 # Receptionist Profiles
@@ -98,11 +132,11 @@ def list_nurse_profiles():
 @app.route("/receptionist_profiles")
 def list_receptionist_profiles():
     recs = ReceptionistProfile.query.all()
-    return jsonify([{
-        "id": r.id,
-        "receptionist_id": r.receptionist_id,
-        "front_desk": r.front_desk
-    } for r in recs])
+    body = "<table><tr><th>ID</th><th>User</th><th>Front Desk</th></tr>"
+    for r in recs:
+        body += f"<tr><td>{r.id}</td><td>{r.receptionist_id}</td><td>{r.front_desk}</td></tr>"
+    body += "</table>"
+    return render_template_string(BASE_DASHBOARD, title="Receptionist Profiles", body=body)
 
 # -------------------------------------------------
 # Audit Logs
@@ -110,13 +144,11 @@ def list_receptionist_profiles():
 @app.route("/audit_logs")
 def list_audit_logs():
     logs = AuditLog.query.order_by(AuditLog.timestamp.desc()).all()
-    return jsonify([{
-        "id": l.id,
-        "user_id": l.user_id,
-        "action": l.action,
-        "details": l.details,
-        "timestamp": l.timestamp.isoformat() if l.timestamp else None
-    } for l in logs])
+    body = "<table><tr><th>ID</th><th>User</th><th>Action</th><th>Details</th><th>Timestamp</th></tr>"
+    for l in logs:
+        body += f"<tr><td>{l.id}</td><td>{l.user_id}</td><td>{l.action}</td><td>{l.details}</td><td>{l.timestamp}</td></tr>"
+    body += "</table>"
+    return render_template_string(BASE_DASHBOARD, title="Audit Logs", body=body)
 
 # -------------------------------------------------
 # Twilio Logs (SMS, Calls, Faxes)
@@ -124,15 +156,11 @@ def list_audit_logs():
 @app.route("/twilio_logs")
 def list_twilio_logs():
     logs = TwilioLog.query.order_by(TwilioLog.timestamp.desc()).all()
-    return jsonify([{
-        "id": t.id,
-        "type": t.type,
-        "from_number": t.from_number,
-        "to_number": t.to_number,
-        "content": t.content,
-        "status": t.status,
-        "timestamp": t.timestamp.isoformat() if t.timestamp else None
-    } for t in logs])
+    body = "<table><tr><th>ID</th><th>Type</th><th>From</th><th>To</th><th>Content</th><th>Status</th><th>Time</th></tr>"
+    for t in logs:
+        body += f"<tr><td>{t.id}</td><td>{t.type}</td><td>{t.from_number}</td><td>{t.to_number}</td><td>{t.content}</td><td>{t.status}</td><td>{t.timestamp}</td></tr>"
+    body += "</table>"
+    return render_template_string(BASE_DASHBOARD, title="Twilio Logs", body=body)
 
 # -------------------------------------------------
 # Run
