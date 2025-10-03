@@ -1,32 +1,25 @@
-"""Seed audit logs"""
+"""Seed demo audit logs"""
 
 from alembic import op
 import sqlalchemy as sa
-import datetime
+from datetime import datetime
 
-# Revision identifiers
-revision = '0008_seed_audit_logs'
-down_revision = '0007_add_nurse_table'
+revision = "0008_seed_audit_logs"
+down_revision = "0007_seed_nurse_user"
 branch_labels = None
 depends_on = None
 
+
 def upgrade():
     conn = op.get_bind()
-    now = datetime.datetime.utcnow()
-
     conn.execute(sa.text("""
-        INSERT INTO audit_log (user, action, timestamp, details)
-        VALUES
-          ('superadmin', 'CREATE_PATIENT', :t1, 'Created patient Alice Johnson'),
-          ('receptionist', 'SCHEDULE_APPOINTMENT', :t2, 'Scheduled appointment for Bob Smith'),
-          ('doctor', 'ADD_NOTE', :t3, 'Added note for Carol Davis appointment'),
-          ('nurse', 'CHECK_VITALS', :t4, 'Recorded vitals for Alice Johnson')
-    """), {
-        "t1": now - datetime.timedelta(days=2),
-        "t2": now - datetime.timedelta(days=1),
-        "t3": now - datetime.timedelta(hours=6),
-        "t4": now - datetime.timedelta(minutes=30),
-    })
+        INSERT INTO audit_log (user, action, details, timestamp)
+        VALUES 
+            ('admin', 'CREATE_PATIENT', 'Created patient John Doe', :now),
+            ('doctor1', 'ADD_NOTE', 'Added follow-up note for Jane Smith', :now),
+            ('nurse1', 'CHECK_VITALS', 'Checked vitals for John Doe', :now)
+    """), {"now": datetime.utcnow()})
+
 
 def downgrade():
     conn = op.get_bind()
