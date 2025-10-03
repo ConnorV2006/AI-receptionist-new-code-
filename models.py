@@ -1,27 +1,30 @@
 from datetime import datetime
-from app import db
+from flask_login import UserMixin
 from werkzeug.security import generate_password_hash, check_password_hash
+from app import db
 
 
+# -------------------
+# Role Table
+# -------------------
 class Role(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(50), unique=True, nullable=False)
-    description = db.Column(db.String(200))
+    name = db.Column(db.String(64), unique=True, nullable=False)
 
-    users = db.relationship("User", backref="role_obj", lazy=True)
+    users = db.relationship("User", backref="role", lazy=True)
 
 
-class User(db.Model):
+# -------------------
+# User Table
+# -------------------
+class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     email = db.Column(db.String(120), unique=True, nullable=False)
-    password_hash = db.Column(db.String(200), nullable=False)
+    password_hash = db.Column(db.String(255), nullable=False)
+    role_id = db.Column(db.Integer, db.ForeignKey("role.id"))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-    # Instead of free text, users now reference a role_id
-    role_id = db.Column(db.Integer, db.ForeignKey("role.id"), nullable=False)
-    phone_number = db.Column(db.String(20))  # from 0002
-    clinic_id = db.Column(db.Integer, db.ForeignKey("clinic.id"))  # from 0003
-
-    audit_logs = db.relationship("AuditLog", backref="user", lazy=True)
+    clinics = db.relationship("Clinic", backref="owner", lazy=True)
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
@@ -30,84 +33,89 @@ class User(db.Model):
         return check_password_hash(self.password_hash, password)
 
 
+# -------------------
+# Clinic Table
+# -------------------
 class Clinic(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(120))
-    slug = db.Column(db.String(50), unique=True)
-    twilio_number = db.Column(db.String(20))
-    twilio_sid = db.Column(db.String(120))
-    twilio_token = db.Column(db.String(120))
-
-    users = db.relationship("User", backref="clinic", lazy=True)
-    calls = db.relationship("CallLog", backref="clinic", lazy=True)
-    messages = db.relationship("MessageLog", backref="clinic", lazy=True)
+    name = db.Column(db.String(120), nullable=False)
+    owner_id = db.Column(db.Integer, db.ForeignKey("user.id"))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
+# -------------------
+# Patient Table
+# -------------------
 class Patient(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(120))
-    dob = db.Column(db.Date)
-    visits = db.relationship("Visit", backref="patient", lazy=True)
+    clinic_id = db.Column(db.Integer, db.ForeignKey("clinic.id"))
+    doctor_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    name = db.Column(db.String(120), nullable=False)
+    dob = db.Column(db.Date, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
-class Visit(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    patient_id = db.Column(db.Integer, db.ForeignKey("patient.id"))
-    date = db.Column(db.DateTime, default=datetime.utcnow)
-    notes = db.Column(db.Text)
-    summary_pdf = db.Column(db.String(200))
-
-
-class Paystub(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    employee = db.Column(db.String(120))
-    period = db.Column(db.String(50))
-    gross = db.Column(db.Float)
-    net = db.Column(db.Float)
-
-
+# -------------------
+# Appointment Table
+# -------------------
 class Appointment(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    patient_name = db.Column(db.String(120))
-    date = db.Column(db.Date)
-    time = db.Column(db.Time)
+    patient_id = db.Column(db.Integer, db.ForeignKey("patient.id"))
+    doctor_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    scheduled_for = db.Column(db.DateTime, nullable=False)
+    reason = db.Column(db.String(255))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    patient = db.relationship("Patient", backref="appointments")
+    doctor = db.relationship("User", backref="appointments")
 
 
-class Reminder(db.Model):
+# -------------------
+# Notes (Doctor Notes)
+# -------------------
+class Note(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    phone = db.Column(db.String(20))
-    message = db.Column(db.Text)
-    send_time = db.Column(db.DateTime)
+    doctor_id = db.Column(db.Integer, db.ForeignKey("user.id"))
+    patient_id = db.Column(db.Integer, db.ForeignKey("patient.id"))
+    content = db.Column(db.Text, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    doctor = db.relationship("User", backref="notes")
+    patient = db.relationship("Patient", backref="notes")
 
 
-class FileUpload(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    filename = db.Column(db.String(200))
-    path = db.Column(db.String(300))
-    uploaded_at = db.Column(db.DateTime, default=datetime.utcnow)
-
-
+# -------------------
+# Call Logs
+# -------------------
 class CallLog(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     clinic_id = db.Column(db.Integer, db.ForeignKey("clinic.id"))
     from_number = db.Column(db.String(20))
     to_number = db.Column(db.String(20))
-    status = db.Column(db.String(50))
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    status = db.Column(db.String(20))
+    duration = db.Column(db.Integer)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
+# -------------------
+# Message Logs
+# -------------------
 class MessageLog(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     clinic_id = db.Column(db.Integer, db.ForeignKey("clinic.id"))
     from_number = db.Column(db.String(20))
     to_number = db.Column(db.String(20))
     body = db.Column(db.Text)
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
+# -------------------
+# Audit Logs
+# -------------------
 class AuditLog(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"))
-    action = db.Column(db.String(200), nullable=False)
-    details = db.Column(db.Text)
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    action = db.Column(db.String(255), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    user = db.relationship("User", backref="audit_logs")
