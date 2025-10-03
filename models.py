@@ -1,80 +1,142 @@
-from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
+from flask_sqlalchemy import SQLAlchemy
 
-from app import db
+db = SQLAlchemy()
 
-# -------------------------
-# USER
-# -------------------------
+
+# ==========================
+# Role
+# ==========================
+class Role(db.Model):
+    __tablename__ = "role"
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(50), unique=True, nullable=False)
+
+    users = db.relationship("User", back_populates="role")
+
+    def __repr__(self):
+        return f"<Role {self.name}>"
+
+
+# ==========================
+# User
+# ==========================
 class User(db.Model):
     __tablename__ = "user"
 
     id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(120), unique=True, nullable=False)
+    username = db.Column(db.String(80), unique=True, nullable=False)
     email = db.Column(db.String(120), unique=True, nullable=False)
-    password = db.Column(db.String(255), nullable=False)
-    role = db.Column(db.String(50), nullable=False, default="receptionist")  
-    # roles: receptionist, nurse, doctor, admin, superadmin
+    password_hash = db.Column(db.String(128), nullable=False)
+    role_id = db.Column(db.Integer, db.ForeignKey("role.id"), nullable=False)
 
-    # One-to-one optional link to Nurse profile
-    nurse_profile = db.relationship("Nurse", backref="user", uselist=False)
-
-    def __repr__(self):
-        return f"<User {self.username} - {self.role}>"
-
-
-# -------------------------
-# NURSE PROFILE
-# -------------------------
-class Nurse(db.Model):
-    __tablename__ = "nurse"
-
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, unique=True)
-    specialty = db.Column(db.String(120))
-    shift = db.Column(db.String(50))
-    license_number = db.Column(db.String(50))
+    role = db.relationship("Role", back_populates="users")
+    patients = db.relationship("Patient", back_populates="doctor", lazy=True)
+    appointments = db.relationship("Appointment", back_populates="doctor", lazy=True)
+    audit_logs = db.relationship("AuditLog", back_populates="user", lazy=True)
+    doctor_notes = db.relationship("DoctorNote", back_populates="doctor", lazy=True)
 
     def __repr__(self):
-        return f"<Nurse user_id={self.user_id}, specialty={self.specialty}, shift={self.shift}>"
+        return f"<User {self.username} ({self.role.name})>"
 
 
-# -------------------------
-# PATIENT
-# -------------------------
+# ==========================
+# Patient
+# ==========================
 class Patient(db.Model):
     __tablename__ = "patient"
 
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(120), nullable=False)
-    email = db.Column(db.String(120))
+    email = db.Column(db.String(120), unique=True)
     phone = db.Column(db.String(20))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-    appointments = db.relationship("Appointment", backref="patient", lazy=True)
+    doctor_id = db.Column(db.Integer, db.ForeignKey("user.id"))
+    doctor = db.relationship("User", back_populates="patients")
+
+    appointments = db.relationship("Appointment", back_populates="patient", lazy=True)
+    doctor_notes = db.relationship("DoctorNote", back_populates="patient", lazy=True)
+
+    def __repr__(self):
+        return f"<Patient {self.name}>"
 
 
-# -------------------------
-# APPOINTMENT
-# -------------------------
+# ==========================
+# Appointment
+# ==========================
 class Appointment(db.Model):
     __tablename__ = "appointment"
 
     id = db.Column(db.Integer, primary_key=True)
-    patient_id = db.Column(db.Integer, db.ForeignKey("patient.id"), nullable=False)
-    date = db.Column(db.DateTime, nullable=False)
-    notes = db.Column(db.Text)
+    appointment_time = db.Column(db.DateTime, nullable=False)
+    reason = db.Column(db.String(250))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
+    patient_id = db.Column(db.Integer, db.ForeignKey("patient.id"), nullable=False)
+    doctor_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
 
-# -------------------------
-# AUDIT LOG
-# -------------------------
+    patient = db.relationship("Patient", back_populates="appointments")
+    doctor = db.relationship("User", back_populates="appointments")
+    doctor_notes = db.relationship("DoctorNote", back_populates="appointment", lazy=True)
+
+    def __repr__(self):
+        return f"<Appointment {self.id} - {self.patient.name}>"
+
+
+# ==========================
+# Audit Log
+# ==========================
 class AuditLog(db.Model):
     __tablename__ = "audit_log"
 
     id = db.Column(db.Integer, primary_key=True)
-    user = db.Column(db.String(120))  # could be user_id in future
-    action = db.Column(db.String(255))
-    details = db.Column(db.Text)
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    action = db.Column(db.String(255), nullable=False)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    user = db.relationship("User", back_populates="audit_logs")
+
+    def __repr__(self):
+        return f"<AuditLog {self.action} by {self.user.username}>"
+
+
+# ==========================
+# Clinic
+# ==========================
+class Clinic(db.Model):
+    __tablename__ = "clinic"
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(120), nullable=False)
+    slug = db.Column(db.String(120), unique=True, nullable=False)
+    twilio_number = db.Column(db.String(20))
+    twilio_sid = db.Column(db.String(255))
+    twilio_token = db.Column(db.String(255))
+
+    def __repr__(self):
+        return f"<Clinic {self.name}>"
+
+
+# ==========================
+# Doctor Notes
+# ==========================
+class DoctorNote(db.Model):
+    __tablename__ = "doctor_note"
+
+    id = db.Column(db.Integer, primary_key=True)
+    doctor_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    patient_id = db.Column(db.Integer, db.ForeignKey("patient.id"), nullable=False)
+    appointment_id = db.Column(db.Integer, db.ForeignKey("appointment.id"))
+
+    note = db.Column(db.Text, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    doctor = db.relationship("User", back_populates="doctor_notes")
+    patient = db.relationship("Patient", back_populates="doctor_notes")
+    appointment = db.relationship("Appointment", back_populates="doctor_notes")
+
+    def __repr__(self):
+        return f"<DoctorNote Doctor={self.doctor_id} Patient={self.patient_id}>"
