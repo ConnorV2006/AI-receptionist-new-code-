@@ -1,148 +1,91 @@
-import os
 from datetime import datetime
 from flask_sqlalchemy import SQLAlchemy
-from werkzeug.security import generate_password_hash, check_password_hash
 from flask_login import UserMixin
+from werkzeug.security import generate_password_hash, check_password_hash
 
-from app import db
+from app import db  # db is created in app.py
 
-# -------------------------------------------------
-# Role model
-# -------------------------------------------------
+# ---------- Roles ----------
 class Role(db.Model):
-    __tablename__ = "role"
+    __tablename__ = "roles"
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(50), unique=True, nullable=False)
+    description = db.Column(db.String(255))
 
     users = db.relationship("User", back_populates="role", lazy=True)
 
 
-# -------------------------------------------------
-# User model
-# -------------------------------------------------
+# ---------- Users ----------
 class User(UserMixin, db.Model):
-    __tablename__ = "user"
-
+    __tablename__ = "users"
     id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(80), unique=True, nullable=False)
+    username = db.Column(db.String(50), unique=True, nullable=False)
     email = db.Column(db.String(120), unique=True, nullable=False)
-    password_hash = db.Column(db.String(200), nullable=False)
-
-    role_id = db.Column(db.Integer, db.ForeignKey("role.id"))
-    role = db.relationship("Role", back_populates="users")
-
+    password_hash = db.Column(db.String(255), nullable=False)
+    role_id = db.Column(db.Integer, db.ForeignKey("roles.id"))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-    # Relationships
-    appointments = db.relationship("Appointment", back_populates="doctor", lazy=True)
-    notes = db.relationship("DoctorNote", back_populates="doctor", lazy=True)
-    nurse_profile = db.relationship("NurseProfile", uselist=False, back_populates="user")
+    role = db.relationship("Role", back_populates="users")
 
-    def set_password(self, password):
+    # helpers
+    def set_password(self, password: str):
         self.password_hash = generate_password_hash(password)
 
-    def check_password(self, password):
+    def check_password(self, password: str) -> bool:
         return check_password_hash(self.password_hash, password)
 
 
-# -------------------------------------------------
-# Clinic model
-# -------------------------------------------------
+# ---------- Clinics ----------
 class Clinic(db.Model):
-    __tablename__ = "clinic"
-
+    __tablename__ = "clinics"
     id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(100), nullable=False)
-    slug = db.Column(db.String(100), unique=True, nullable=False)
-
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-
-    appointments = db.relationship("Appointment", back_populates="clinic", lazy=True)
-    patients = db.relationship("Patient", back_populates="clinic", lazy=True)
+    name = db.Column(db.String(255), nullable=False)
+    slug = db.Column(db.String(255), unique=True, nullable=False)
 
 
-# -------------------------------------------------
-# Patient model
-# -------------------------------------------------
+# ---------- Patients ----------
 class Patient(db.Model):
-    __tablename__ = "patient"
-
+    __tablename__ = "patients"
     id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(100), nullable=False)
+    first_name = db.Column(db.String(50), nullable=False)
+    last_name = db.Column(db.String(50), nullable=False)
     dob = db.Column(db.Date, nullable=True)
-    phone = db.Column(db.String(20), nullable=True)
-    email = db.Column(db.String(120), nullable=True)
-
-    clinic_id = db.Column(db.Integer, db.ForeignKey("clinic.id"))
-    clinic = db.relationship("Clinic", back_populates="patients")
-
-    appointments = db.relationship("Appointment", back_populates="patient", lazy=True)
-    notes = db.relationship("DoctorNote", back_populates="patient", lazy=True)
+    phone = db.Column(db.String(20))
+    email = db.Column(db.String(120))
+    clinic_id = db.Column(db.Integer, db.ForeignKey("clinics.id"))
 
 
-# -------------------------------------------------
-# Appointment model
-# -------------------------------------------------
+# ---------- Doctors ----------
+class Doctor(db.Model):
+    __tablename__ = "doctors"
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"))
+    specialty = db.Column(db.String(100))
+
+
+# ---------- Nurses ----------
+class Nurse(db.Model):
+    __tablename__ = "nurses"
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"))
+
+
+# ---------- Appointments ----------
 class Appointment(db.Model):
-    __tablename__ = "appointment"
-
+    __tablename__ = "appointments"
     id = db.Column(db.Integer, primary_key=True)
-    datetime = db.Column(db.DateTime, nullable=False)
-    reason = db.Column(db.String(255), nullable=True)
-
-    patient_id = db.Column(db.Integer, db.ForeignKey("patient.id"))
-    doctor_id = db.Column(db.Integer, db.ForeignKey("user.id"))
-    clinic_id = db.Column(db.Integer, db.ForeignKey("clinic.id"))
-
-    patient = db.relationship("Patient", back_populates="appointments")
-    doctor = db.relationship("User", back_populates="appointments")
-    clinic = db.relationship("Clinic", back_populates="appointments")
-
-    notes = db.relationship("DoctorNote", back_populates="appointment", lazy=True)
-
-
-# -------------------------------------------------
-# Doctor Notes model
-# -------------------------------------------------
-class DoctorNote(db.Model):
-    __tablename__ = "doctor_note"
-
-    id = db.Column(db.Integer, primary_key=True)
-    doctor_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
-    patient_id = db.Column(db.Integer, db.ForeignKey("patient.id"), nullable=False)
-    appointment_id = db.Column(db.Integer, db.ForeignKey("appointment.id"))
-
-    note = db.Column(db.Text, nullable=False)
+    patient_id = db.Column(db.Integer, db.ForeignKey("patients.id"))
+    doctor_id = db.Column(db.Integer, db.ForeignKey("doctors.id"))
+    scheduled_time = db.Column(db.DateTime, nullable=False)
+    notes = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
-    doctor = db.relationship("User", back_populates="notes")
-    patient = db.relationship("Patient", back_populates="notes")
-    appointment = db.relationship("Appointment", back_populates="notes")
 
 
-# -------------------------------------------------
-# Nurse Profile model
-# -------------------------------------------------
-class NurseProfile(db.Model):
-    __tablename__ = "nurse_profile"
-
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), unique=True, nullable=False)
-    specialty = db.Column(db.String(100), nullable=True)
-    shift = db.Column(db.String(50), nullable=True)
-
-    user = db.relationship("User", back_populates="nurse_profile")
-
-
-# -------------------------------------------------
-# Audit Log model
-# -------------------------------------------------
+# ---------- Audit Logs ----------
 class AuditLog(db.Model):
-    __tablename__ = "audit_log"
-
+    __tablename__ = "audit_logs"
     id = db.Column(db.Integer, primary_key=True)
-    user = db.Column(db.String(80), nullable=False)
-    action = db.Column(db.String(100), nullable=False)
-    details = db.Column(db.Text, nullable=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"))
+    action = db.Column(db.String(255), nullable=False)
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    details = db.Column(db.Text)
