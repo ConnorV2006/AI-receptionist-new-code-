@@ -2,6 +2,7 @@ flask
 flask_sqlalchemy
 flask_migrate
 gunicorn
+flask-login
 
 # Database driver
 psycopg2-binary
