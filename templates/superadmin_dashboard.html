@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container mt-4">
+  <h2>⚙️ Superadmin Dashboard</h2>
+  <div class="row text-center">
+    <div class="col-md-3"><div class="card"><div class="card-body"><h5>Total Users</h5><h2>{{ users_count }}</h2></div></div></div>
+    <div class="col-md-3"><div class="card"><div class="card-body"><h5>Clinics</h5><h2>{{ clinics_count }}</h2></div></div></div>
+    <div class="col-md-3"><div class="card"><div class="card-body"><h5>Appointments</h5><h2>{{ appointments_count }}</h2></div></div></div>
+    <div class="col-md-3"><div class="card"><div class="card-body"><h5>Audit Logs</h5><h2>{{ audit_logs_count }}</h2></div></div></div>
+  </div>
+  <h4 class="mt-5">📜 Recent Audit Logs</h4>
+  <table class="table">
+    <thead><tr><th>User</th><th>Action</th><th>Timestamp</th></tr></thead>
+    <tbody>
+      {% for log in audit_logs %}
+      <tr><td>{{ log.user.email }}</td><td>{{ log.action }}</td><td>{{ log.created_at.strftime('%Y-%m-%d %H:%M') }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
