@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container mt-4">
+  <h2>🩺 Doctor Dashboard</h2>
+  <h4 class="mt-4">📅 Today's Schedule</h4>
+  <table class="table"><thead><tr><th>Time</th><th>Patient</th><th>Reason</th></tr></thead>
+    <tbody>{% for appt in todays_appointments %}<tr><td>{{ appt.scheduled_for.strftime('%H:%M') }}</td><td>{{ appt.patient.name }}</td><td>{{ appt.reason or "Check-up" }}</td></tr>{% endfor %}</tbody>
+  </table>
+  <h4 class="mt-5">👥 My Patients</h4>
+  <ul class="list-group">{% for patient in patients %}<li class="list-group-item d-flex justify-content-between"><span>{{ patient.name }} (DOB: {{ patient.dob }})</span><a href="{{ url_for('view_patient', patient_id=patient.id) }}" class="btn btn-sm btn-primary">View</a></li>{% endfor %}</ul>
+  <h4 class="mt-5">📝 Recent Notes</h4>
+  <ul class="list-group">{% for note in notes %}<li class="list-group-item"><strong>{{ note.patient.name }}</strong>: {{ note.content[:100] }}... <small class="text-muted">({{ note.created_at.strftime('%Y-%m-%d') }})</small></li>{% endfor %}</ul>
+</div>
+{% endblock %}
