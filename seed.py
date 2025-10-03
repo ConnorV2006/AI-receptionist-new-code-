@@ -1,57 +1,73 @@
 import os
-from app import app, db
-from models import Role, User, Clinic
-from werkzeug.security import generate_password_hash
-from sqlalchemy.exc import ProgrammingError, OperationalError
-import time
+from datetime import datetime
+from sqlalchemy.exc import ProgrammingError
+from sqlalchemy import inspect
+from app import db
+from models import Role, User, Clinic, Patient, Appointment, AuditLog
 
-def wait_for_tables():
-    # simple probe to ensure at least one critical table exists
-    for _ in range(10):
-        try:
-            db.session.execute("SELECT 1 FROM roles LIMIT 1;")
-            return True
-        except (ProgrammingError, OperationalError):
-            print("⏳ Waiting for tables to be ready...")
-            time.sleep(3)
-    return False
+def table_exists(table_name):
+    """Check if a table exists in the DB before seeding."""
+    inspector = inspect(db.engine)
+    return table_name in inspector.get_table_names()
 
 def run_seed():
-    with app.app_context():
-        if not wait_for_tables():
-            print("❌ Tables not ready; aborting seed.")
-            return
+    print("🔄 Starting database seeding...")
 
-        # Roles
-        desired_roles = ["Admin", "Receptionist", "Doctor", "Nurse"]
-        existing = {r.name for r in Role.query.all()}
-        for name in desired_roles:
-            if name not in existing:
-                db.session.add(Role(name=name, description=f"Default {name} role"))
-        db.session.commit()
+    # --- Seed Roles ---
+    if table_exists("role"):
+        for role_name in ["Admin", "Doctor", "Nurse", "Receptionist"]:
+            if not Role.query.filter_by(name=role_name).first():
+                role = Role(name=role_name)
+                db.session.add(role)
+                print(f"✅ Added role: {role_name}")
+    else:
+        print("⚠️ Skipping Role seeding (table not found).")
 
-        # Admin user
-        if not User.query.filter_by(username=os.getenv("INIT_ADMIN_USERNAME", "admin")).first():
-            admin_role = Role.query.filter_by(name="Admin").first()
-            user = User(
-                username=os.getenv("INIT_ADMIN_USERNAME", "admin"),
-                email=os.getenv("INIT_ADMIN_EMAIL", "admin@example.com"),
-                role_id=admin_role.id if admin_role else None,
+    # --- Seed Admin User ---
+    if table_exists("users") and table_exists("role"):
+        admin_email = os.environ.get("INIT_ADMIN_EMAIL", "admin@example.com")
+        admin_username = os.environ.get("INIT_ADMIN_USERNAME", "admin")
+        admin_password = os.environ.get("INIT_ADMIN_PASSWORD", "StrongP@ssw0rd!")
+        admin_role = Role.query.filter_by(name="Admin").first()
+
+        if admin_role and not User.query.filter_by(email=admin_email).first():
+            admin = User(
+                username=admin_username,
+                email=admin_email,
+                role_id=admin_role.id,
             )
-            user.password_hash = generate_password_hash(os.getenv("INIT_ADMIN_PASSWORD", "StrongP@ssw0rd!"))
-            db.session.add(user)
-            db.session.commit()
+            admin.set_password(admin_password)
+            db.session.add(admin)
+            print("✅ Admin user created.")
+    else:
+        print("⚠️ Skipping User seeding (table not found).")
 
-        # Clinic
-        slug = os.getenv("INIT_CLINIC_SLUG", "test")
-        if not Clinic.query.filter_by(slug=slug).first():
-            db.session.add(Clinic(
-                name=os.getenv("INIT_CLINIC_NAME", "Test Clinic"),
-                slug=slug
-            ))
-            db.session.commit()
+    # --- Seed Clinic ---
+    if table_exists("clinic"):
+        clinic_name = os.environ.get("INIT_CLINIC_NAME", "Test Clinic")
+        clinic_slug = os.environ.get("INIT_CLINIC_SLUG", "test")
+        api_key = os.environ.get("CLINIC_API_KEY_DEFAULT", "some_default_key")
 
-        print("🌱 Seeding complete.")
+        if not Clinic.query.filter_by(slug=clinic_slug).first():
+            clinic = Clinic(
+                name=clinic_name,
+                slug=clinic_slug,
+                api_key=api_key,
+                created_at=datetime.utcnow(),
+            )
+            db.session.add(clinic)
+            print(f"✅ Clinic '{clinic_name}' created.")
+    else:
+        print("⚠️ Skipping Clinic seeding (table not found).")
+
+    # --- Commit everything ---
+    try:
+        db.session.commit()
+        print("🎉 Database seeding completed successfully!")
+    except ProgrammingError as e:
+        print(f"❌ Seeding failed: {e}")
+        db.session.rollback()
+
 
 if __name__ == "__main__":
     run_seed()
