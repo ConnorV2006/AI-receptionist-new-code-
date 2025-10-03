@@ -1,4 +1,4 @@
-"""Seed demo clinic, patients, appointments, and doctor notes"""
+"""Seed demo patients & appointments"""
 
 from alembic import op
 import sqlalchemy as sa
@@ -13,24 +13,17 @@ depends_on = None
 def upgrade():
     conn = op.get_bind()
 
-    # Demo patients
     conn.execute(sa.text("""
         INSERT INTO patient (name, email, phone, created_at)
-        VALUES 
-            ('John Doe', 'john@example.com', '555-1234', :now),
-            ('Jane Smith', 'jane@example.com', '555-5678', :now)
+        VALUES ('John Doe', 'john@example.com', '555-1234', :now)
     """), {"now": datetime.utcnow()})
 
-    # Demo appointments
     conn.execute(sa.text("""
         INSERT INTO appointment (patient_id, date, notes, created_at)
-        VALUES 
-            (1, :tomorrow, 'General check-up', :now),
-            (2, :nextweek, 'Follow-up visit', :now)
+        VALUES (1, :appt_time, 'Initial Consultation', :now)
     """), {
-        "now": datetime.utcnow(),
-        "tomorrow": datetime.utcnow() + timedelta(days=1),
-        "nextweek": datetime.utcnow() + timedelta(days=7)
+        "appt_time": datetime.utcnow() + timedelta(days=1),
+        "now": datetime.utcnow()
     })
 
 
