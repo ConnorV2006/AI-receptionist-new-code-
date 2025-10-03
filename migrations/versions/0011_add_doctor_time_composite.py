@@ -4,10 +4,10 @@ Revision ID: 0011_add_doctor_time_composite
 Revises: 0010_add_indexes
 Create Date: 2025-10-03
 """
-from alembic import op
-import sqlalchemy as sa
 
-# Revision identifiers
+from alembic import op
+
+# revision identifiers, used by Alembic.
 revision = "0011_add_doctor_time_composite"
 down_revision = "0010_add_indexes"
 branch_labels = None
@@ -15,14 +15,18 @@ depends_on = None
 
 
 def upgrade():
-    with op.get_context().autocommit_block():
-        op.create_index(
-            "ix_appointments_doctor_time",
-            "appointments",
-            ["doctor_id", "scheduled_time"],
-            postgresql_concurrently=True,
-        )
+    # Composite index for queries filtering by doctor_id + scheduled_time
+    op.create_index(
+        "ix_appointments_doctor_scheduled",
+        "appointments",
+        ["doctor_id", "scheduled_time"],
+        postgresql_concurrently=True
+    )
 
 
 def downgrade():
-    op.drop_index("ix_appointments_doctor_time", table_name="appointments")
+    op.drop_index(
+        "ix_appointments_doctor_scheduled",
+        table_name="appointments",
+        postgresql_concurrently=True
+    )
