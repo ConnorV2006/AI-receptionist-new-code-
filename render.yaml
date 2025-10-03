@@ -20,6 +20,13 @@ services:
       echo "📦 Running database migrations..."
       flask db upgrade
 
+  - type: job
+    name: seed-demo-data
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: bash reset.sh
+
 databases:
   - name: receptionist-db
     plan: free
