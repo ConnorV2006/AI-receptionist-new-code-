@@ -1,15 +1,15 @@
-"""Seed demo data for roles, users, patients, appointments, notes, and Twilio logs
+"""Seed demo patients, appointments, notes, nurse/receptionist profiles, and Twilio logs
 
 Revision ID: 0002_seed_demo_data
 Revises: 0001_initial_full
 Create Date: 2025-10-03
 """
+
 from alembic import op
 import sqlalchemy as sa
 from datetime import datetime, timedelta
 
-
-# Revision identifiers
+# revision identifiers, used by Alembic.
 revision = "0002_seed_demo_data"
 down_revision = "0001_initial_full"
 branch_labels = None
@@ -19,116 +19,111 @@ depends_on = None
 def upgrade():
     conn = op.get_bind()
 
-    # Insert Roles
-    conn.execute(sa.text("""
-        INSERT INTO roles (name) VALUES
-        ('Admin'),
-        ('Doctor'),
-        ('Nurse'),
-        ('Receptionist')
-        ON CONFLICT (name) DO NOTHING;
-    """))
+    # --- Patients ---
+    conn.execute(
+        sa.text(
+            """
+            INSERT INTO patients (first_name, last_name, email, phone, date_of_birth)
+            VALUES
+                ('Alice', 'Johnson', 'alice@example.com', '5551112222', '1990-05-14'),
+                ('Bob', 'Smith', 'bob@example.com', '5553334444', '1985-08-23'),
+                ('Charlie', 'Brown', 'charlie@example.com', '5556667777', '1978-11-30')
+            """
+        )
+    )
 
-    # Insert Users
-    conn.execute(sa.text("""
-        INSERT INTO users (username, email, password, role_id, created_at)
-        VALUES
-        ('admin', 'admin@example.com', 'hashed_pw', 
-            (SELECT id FROM roles WHERE name='Admin'), NOW()),
-        ('dr_smith', 'drsmith@example.com', 'hashed_pw', 
-            (SELECT id FROM roles WHERE name='Doctor'), NOW()),
-        ('nurse_jane', 'nursejane@example.com', 'hashed_pw',
-            (SELECT id FROM roles WHERE name='Nurse'), NOW()),
-        ('reception_bob', 'bob@example.com', 'hashed_pw',
-            (SELECT id FROM roles WHERE name='Receptionist'), NOW())
-        ON CONFLICT (email) DO NOTHING;
-    """))
-
-    # Insert Nurse Profile
-    conn.execute(sa.text("""
-        INSERT INTO nurse_profiles (user_id, nurse_id)
-        VALUES ((SELECT id FROM users WHERE username='nurse_jane'), 'NURSE001')
-        ON CONFLICT DO NOTHING;
-    """))
-
-    # Insert Receptionist Profile
-    conn.execute(sa.text("""
-        INSERT INTO receptionist_profiles (user_id, receptionist_id)
-        VALUES ((SELECT id FROM users WHERE username='reception_bob'), 'RECEP001')
-        ON CONFLICT DO NOTHING;
-    """))
-
-    # Insert Patients
-    conn.execute(sa.text("""
-        INSERT INTO patients (first_name, last_name, email, phone, created_at)
-        VALUES
-        ('Alice', 'Johnson', 'alice@example.com', '555-1111', NOW()),
-        ('Bob', 'Williams', 'bobw@example.com', '555-2222', NOW()),
-        ('Carol', 'Davis', 'carol@example.com', '555-3333', NOW())
-        ON CONFLICT (email) DO NOTHING;
-    """))
-
-    # Insert Appointments (Past, Present, Future)
+    # --- Appointments (past, today, future) ---
     now = datetime.utcnow()
-    conn.execute(sa.text("""
-        INSERT INTO appointments (patient_id, doctor_id, scheduled_time)
-        VALUES
-        ((SELECT id FROM patients WHERE email='alice@example.com'),
-         (SELECT id FROM users WHERE username='dr_smith'),
-         :past),
-        ((SELECT id FROM patients WHERE email='bobw@example.com'),
-         (SELECT id FROM users WHERE username='dr_smith'),
-         :today),
-        ((SELECT id FROM patients WHERE email='carol@example.com'),
-         (SELECT id FROM users WHERE username='dr_smith'),
-         :future)
-    """), {
-        "past": now - timedelta(days=1),
-        "today": now,
-        "future": now + timedelta(days=1),
-    })
+    yesterday = now - timedelta(days=1)
+    tomorrow = now + timedelta(days=1)
 
-    # Insert Doctor Notes
-    conn.execute(sa.text("""
-        INSERT INTO doctor_notes (patient_id, doctor_id, content, created_at)
-        VALUES
-        ((SELECT id FROM patients WHERE email='alice@example.com'),
-         (SELECT id FROM users WHERE username='dr_smith'),
-         'Follow-up visit went well. Patient recovering.', NOW() - interval '1 day'),
-        ((SELECT id FROM patients WHERE email='bobw@example.com'),
-         (SELECT id FROM users WHERE username='dr_smith'),
-         'Initial consultation completed.', NOW()),
-        ((SELECT id FROM patients WHERE email='carol@example.com'),
-         (SELECT id FROM users WHERE username='dr_smith'),
-         'Scheduled for future surgery prep.', NOW() + interval '1 day')
-    """))
+    conn.execute(
+        sa.text(
+            """
+            INSERT INTO appointments (patient_id, doctor_id, scheduled_time, reason)
+            VALUES
+                (1, 42, :yesterday, 'Follow-up visit'),
+                (2, 42, :now, 'General consultation'),
+                (3, 42, :tomorrow, 'Routine check-up')
+            """
+        ),
+        {"yesterday": yesterday, "now": now, "tomorrow": tomorrow},
+    )
 
-    # Insert Twilio Logs (SMS, Call, Fax – Past, Present, Future)
-    conn.execute(sa.text("""
-        INSERT INTO twilio_logs (type, direction, from_number, to_number, content, status, timestamp)
-        VALUES
-        ('sms', 'inbound', '+15550001', '+15551111', 'Patient Alice confirming appointment.', 'delivered', NOW() - interval '1 day'),
-        ('sms', 'outbound', '+15550002', '+15552222', 'Reminder: Appointment today for Bob.', 'sent', NOW()),
-        ('sms', 'outbound', '+15550003', '+15553333', 'Reminder: Appointment tomorrow for Carol.', 'queued', NOW() + interval '1 day'),
+    # --- Doctor Notes ---
+    conn.execute(
+        sa.text(
+            """
+            INSERT INTO doctor_notes (patient_id, doctor_id, note, created_at)
+            VALUES
+                (1, 42, 'Patient recovering well, no complications.', :yesterday),
+                (2, 42, 'Discussed lifestyle changes, scheduled blood test.', :now),
+                (3, 42, 'Initial consultation for new patient.', :tomorrow)
+            """
+        ),
+        {"yesterday": yesterday, "now": now, "tomorrow": tomorrow},
+    )
 
-        ('call', 'inbound', '+15554444', '+15551111', 'Patient Alice called regarding results.', 'completed', NOW() - interval '1 day'),
-        ('call', 'outbound', '+15555555', '+15552222', 'Doctor follow-up with Bob.', 'completed', NOW()),
-        ('call', 'outbound', '+15556666', '+15553333', 'Pre-surgery call for Carol.', 'scheduled', NOW() + interval '1 day'),
+    # --- Nurse Profiles ---
+    conn.execute(
+        sa.text(
+            """
+            INSERT INTO nurse_profiles (user_id, nurse_id)
+            VALUES
+                (1, 'NURSE-001'),
+                (2, 'NURSE-002')
+            """
+        )
+    )
 
-        ('fax', 'inbound', '+15557777', '+15551111', 'Lab results for Alice.', 'received', NOW() - interval '1 day'),
-        ('fax', 'outbound', '+15558888', '+15552222', 'Medical records sent for Bob.', 'sent', NOW()),
-        ('fax', 'outbound', '+15559999', '+15553333', 'Pre-surgery clearance fax for Carol.', 'pending', NOW() + interval '1 day')
-    """))
+    # --- Receptionist Profiles ---
+    conn.execute(
+        sa.text(
+            """
+            INSERT INTO receptionist_profiles (user_id, receptionist_id)
+            VALUES
+                (3, 'RECEP-001')
+            """
+        )
+    )
+
+    # --- Twilio Logs (SMS, Call, Fax – past, now, future) ---
+    conn.execute(
+        sa.text(
+            """
+            INSERT INTO twilio_logs (type, direction, from_number, to_number, content, status, timestamp)
+            VALUES
+                -- Past SMS
+                ('sms', 'inbound', '+15551112222', '+15553334444', 'Hello, I need to reschedule.', 'delivered', :yesterday),
+                -- Present SMS
+                ('sms', 'outbound', '+15553334444', '+15551112222', 'Confirmed your appointment today at 2PM.', 'sent', :now),
+                -- Future SMS
+                ('sms', 'outbound', '+15553334444', '+15556667777', 'Reminder: Appointment tomorrow.', 'queued', :tomorrow),
+
+                -- Past Call
+                ('call', 'inbound', '+15558889999', '+15553334444', 'Patient called with chest pain concerns.', 'completed', :yesterday),
+                -- Present Call
+                ('call', 'outbound', '+15553334444', '+15559990000', 'Doctor called patient for consultation.', 'in-progress', :now),
+                -- Future Call
+                ('call', 'outbound', '+15553334444', '+15551110000', 'Scheduled check-in call.', 'queued', :tomorrow),
+
+                -- Past Fax
+                ('fax', 'inbound', '+15557778888', '+15553334444', 'Lab results faxed.', 'completed', :yesterday),
+                -- Present Fax
+                ('fax', 'outbound', '+15553334444', '+15556667777', 'Sending referral letter.', 'sending', :now),
+                -- Future Fax
+                ('fax', 'outbound', '+15553334444', '+15554443333', 'Planned fax of prescription.', 'queued', :tomorrow)
+            """
+        ),
+        {"yesterday": yesterday, "now": now, "tomorrow": tomorrow},
+    )
 
 
 def downgrade():
     conn = op.get_bind()
-
     conn.execute(sa.text("DELETE FROM twilio_logs"))
+    conn.execute(sa.text("DELETE FROM receptionist_profiles"))
+    conn.execute(sa.text("DELETE FROM nurse_profiles"))
     conn.execute(sa.text("DELETE FROM doctor_notes"))
     conn.execute(sa.text("DELETE FROM appointments"))
     conn.execute(sa.text("DELETE FROM patients"))
-    conn.execute(sa.text("DELETE FROM receptionist_profiles"))
-    conn.execute(sa.text("DELETE FROM nurse_profiles"))
-    conn.execute(sa.text("DELETE FROM users"))
-    conn.execute(sa.text("DELETE FROM roles"))
